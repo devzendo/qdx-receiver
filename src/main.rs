@@ -261,7 +261,8 @@ pub enum Message {
     SetAmplitude(f32),
     IncrementFrequencyDigit(u32),
     DecrementFrequencyDigit(u32),
-    SetBandMetres(u8)
+    SetBandMetres(u8),
+    ToggleMute,
 }
 
 // The GUI controls can effect changes in the rest of the system via this facade...
@@ -285,7 +286,7 @@ const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
 
 const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 8;
 
-const MUTE_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 8;
+const MUTE_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 12;
 
 
 struct Gui {
@@ -331,6 +332,8 @@ struct Gui {
 
     amplitude: f32,
     volume_slider: ValueSlider,
+    muted: bool,
+    mute_button: Button,
 }
 
 impl Gui {
@@ -470,8 +473,13 @@ impl Gui {
 
             amplitude,
             volume_slider: ValueSlider::default()
-                .with_size(METER_WIDTH - WIDGET_PADDING - MUTE_BUTTON_DIM, MUTE_BUTTON_DIM)
+                .with_size(METER_WIDTH - WIDGET_PADDING - MUTE_BUTTON_DIM - WIDGET_PADDING, MUTE_BUTTON_DIM)
                 .with_pos(WIDGET_PADDING, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING),
+            muted: false,
+            mute_button: Button::default()
+                .with_size(MUTE_BUTTON_DIM, MUTE_BUTTON_DIM)
+                .with_pos(METER_WIDTH - MUTE_BUTTON_DIM, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("🔇"),
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -526,7 +534,11 @@ impl Gui {
         gui.volume_slider.set_callback(move |wid| {
             volume_sender_clone.send(Message::SetAmplitude(wid.value() as f32));
         });
+        // weird init needed..
         gui.sender.clone().send(Message::SetAmplitude(gui.amplitude));
+
+        gui.mute_button.emit(gui.sender.clone(), Message::ToggleMute);
+        gui.mute_button.set_color(Color::Light2);
 
         wind.set_size(gui.window_width, gui.window_height);
         wind.set_color(window_background);
@@ -575,6 +587,7 @@ impl Gui {
                     Message::SetAmplitude(amplitude) => {
                         info!("Setting amplitude to {}", amplitude);
                         self.gui_output.lock().unwrap().set_amplitude(amplitude);
+                        self.amplitude = amplitude;
                     }
                     Message::IncrementFrequencyDigit(digit) => {
                         info!("Previous frequency {}", self.frequency);
@@ -618,6 +631,18 @@ impl Gui {
                         info!("New frequency {}", self.frequency);
                         self.gui_output.lock().unwrap().set_frequency(self.frequency);
                         self.show_frequency();
+                    }
+                    Message::ToggleMute => {
+                        if self.muted {
+                            info!("Unmuting with amplitude of {}", self.amplitude);
+                            self.gui_output.lock().unwrap().set_amplitude(self.amplitude);
+                            self.mute_button.set_color(Color::Light2);
+                        } else {
+                            info!("Muting");
+                            self.gui_output.lock().unwrap().set_amplitude(0.0);
+                            self.mute_button.set_color(Color::Red);
+                        }
+                        self.muted = !self.muted;
                     }
                 }
             }
