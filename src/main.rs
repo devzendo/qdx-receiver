@@ -257,6 +257,7 @@ pub enum Message {
     SetAmplitude(f32),
     IncrementFrequencyDigit(u32),
     DecrementFrequencyDigit(u32),
+    SetBandMetres(u8)
 }
 
 // The GUI controls can effect changes in the rest of the system via this facade...
@@ -277,6 +278,8 @@ const METER_HEIGHT: i32 = 200;
 const DIGIT_WIDTH: i32 = 60;
 const DIGIT_HEIGHT: i32 = 40;
 const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
+
+const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 8;
 
 struct Gui {
     gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
@@ -308,6 +311,16 @@ struct Gui {
     dn_button_1: Button,
     dn_button_0: Button,
 
+    band_80_button: Button,
+    band_60_button: Button,
+    band_40_button: Button,
+    band_30_button: Button,
+    band_20_button: Button,
+    band_17_button: Button,
+    band_15_button: Button,
+    band_12_button: Button,
+    band_11_button: Button,
+    band_10_button: Button,
 }
 
 impl Gui {
@@ -328,7 +341,7 @@ impl Gui {
             receiver,
             thread_handle: Mutex::new(None),
             window_width: WIDGET_PADDING + METER_WIDTH + WIDGET_PADDING,
-            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM  + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING,
+            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM  + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING,
 
             meter_canvas: Widget::new(WIDGET_PADDING, WIDGET_PADDING, METER_WIDTH, METER_HEIGHT, ""),
             frequency,
@@ -401,6 +414,48 @@ impl Gui {
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
                 .with_pos(WIDGET_PADDING + (7 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
                 .with_label("▼"),
+
+            band_80_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (0 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("80"),
+            band_60_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (1 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("60"),
+            band_40_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (2 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("40"),
+            band_30_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (3 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("30"),
+            band_20_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (4 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("20"),
+            band_17_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (5 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("17"),
+            band_15_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (6 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("15"),
+            band_12_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (7 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("12"),
+            band_11_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (8 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("11"),
+            band_10_button: Button::default()
+                .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (9 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_label("10"),
+
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -436,6 +491,17 @@ impl Gui {
         gui.dn_button_2.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(2));
         gui.dn_button_1.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(1));
         gui.dn_button_0.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(0));
+
+        gui.band_80_button.emit(gui.sender.clone(), Message::SetBandMetres(80));
+        gui.band_60_button.emit(gui.sender.clone(), Message::SetBandMetres(60));
+        gui.band_40_button.emit(gui.sender.clone(), Message::SetBandMetres(40));
+        gui.band_30_button.emit(gui.sender.clone(), Message::SetBandMetres(30));
+        gui.band_20_button.emit(gui.sender.clone(), Message::SetBandMetres(20));
+        gui.band_17_button.emit(gui.sender.clone(), Message::SetBandMetres(17));
+        gui.band_15_button.emit(gui.sender.clone(), Message::SetBandMetres(15));
+        gui.band_12_button.emit(gui.sender.clone(), Message::SetBandMetres(12));
+        gui.band_11_button.emit(gui.sender.clone(), Message::SetBandMetres(11));
+        gui.band_10_button.emit(gui.sender.clone(), Message::SetBandMetres(10));
 
 
         wind.set_size(gui.window_width, gui.window_height);
@@ -509,6 +575,25 @@ impl Gui {
                         } else {
                             error!("Out of range!");
                         }
+                    }
+                    Message::SetBandMetres(m) => {
+                        info!("Setting band to {}m", m);
+                        self.frequency = match m {
+                            80 =>  3_573_000,
+                            60 =>  5_357_000,
+                            40 =>  7_074_000,
+                            30 => 10_136_000,
+                            20 => 14_074_000,
+                            17 => 18_100_000,
+                            15 => 21_074_000,
+                            12 => 24_915_000,
+                            11 => 27_255_000, // Maybe?
+                            10 => 28_180_000,
+                            _ => 14_074_000, // default to 20m
+                        };
+                        info!("New frequency {}", self.frequency);
+                        self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                        self.show_frequency();
                     }
                 }
             }
