@@ -107,6 +107,49 @@ pub fn list_audio_devices(pa: &PortAudio) -> Result<i32, Box<dyn Error>> {
     Ok(0)
 }
 
+pub fn get_qdx_input_device(pa: &PortAudio) -> Result<InputStreamSettings<f32>, Box<dyn Error>> {
+    let num_devices = pa.device_count()?;
+    for device in pa.devices()? {
+        let (idx, info) = device?;
+
+        let in_channels = info.max_input_channels;
+        let input_params = pa::StreamParameters::<f32>::new(idx, in_channels, INTERLEAVED, LATENCY);
+        let in_48k_supported = pa.is_input_format_supported(input_params, SAMPLE_RATE).is_ok();
+        let is_qdx_input = in_channels == 2 && in_48k_supported && info.name.find("QDX").is_some();
+        if is_qdx_input {
+            info!("Using {:?} as QDX input device", info);
+            let settings = InputStreamSettings::new(input_params, SAMPLE_RATE, FRAMES_PER_BUFFER);
+            return Ok(settings);
+        }
+    }
+    Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find QDX input device")))
+}
+
+pub fn is_speaker_name(x: &str) -> bool {
+    return x.eq_ignore_ascii_case("built-in output") || x.eq_ignore_ascii_case("macbook pro speakers") ||
+        x.eq_ignore_ascii_case("speakers (realtek high definition audio");
+    // a poor heuristic since there are several "realtek" devices, and the second one in the list
+    // works - need to assess the DeviceInfo better on windows
+}
+
+pub fn get_speaker_output_device(pa: &PortAudio) -> Result<OutputStreamSettings<f32>, Box<dyn Error>> {
+    for device in pa.devices()? {
+        let (idx, info) = device?;
+
+        let out_channels = info.max_output_channels;
+        let output_params =
+            pa::StreamParameters::<f32>::new(idx, out_channels, INTERLEAVED, LATENCY);
+        let out_48k_supported = pa.is_output_format_supported(output_params, SAMPLE_RATE).is_ok();
+        if is_speaker_name(info.name) && out_channels == 2 && out_48k_supported {
+            info!("Using {:?} as audio output device", info);
+            let settings = OutputStreamSettings::new(output_params, SAMPLE_RATE, FRAMES_PER_BUFFER);
+            return Ok(settings);
+        }
+    }
+    Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find speaker output device")))
+}
+
+
 fn run(arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     // let home_dir = dirs::home_dir();
     // let config_path = config_dir::configuration_directory(home_dir)?;
@@ -125,6 +168,11 @@ fn run(arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
         list_audio_devices(&pa)?;
         return Ok(0)
     }
+
+    info!("Initialising QDX input device...");
+    let qdx_input = get_qdx_input_device(&pa)?;
+    info!("Initialising speaker output device...");
+    let speaker_output = get_speaker_output_device(&pa)?;
 
     info!("Exiting");
     Ok(0)
