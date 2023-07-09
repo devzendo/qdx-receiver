@@ -3,8 +3,11 @@ extern crate clap;
 extern crate portaudio;
 
 use std::error::Error;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, mpsc, Mutex, RwLock};
 use std::{env, thread};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use clap::{App, Arg, ArgMatches};
@@ -12,6 +15,9 @@ use clap::arg_enum;
 use fltk::app;
 use log::{debug, error, info, warn};
 use fltk::app::*;
+use fltk::enums::Color;
+use fltk::prelude::{GroupExt, WidgetExt};
+use fltk::window::Window;
 use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 use portaudio::stream::Parameters;
@@ -216,13 +222,138 @@ impl Receiver {
     }
 }
 
+impl GUIOutput for Receiver {
+    fn set_frequency(&mut self, _frequency_hz: u32) {
+        error!("Unimplemented set_frequency");
+    }
+
+    fn set_amplitude(&mut self, amplitude: f32) {
+        let mut callback_data = self.callback_data.write().unwrap();
+        callback_data.amplitude = amplitude;
+    }
+}
+
 impl Drop for Receiver {
     fn drop(&mut self) {
         info!("Stopping duplex stream: {:?}", self.duplex_stream.as_mut().unwrap().stop());
     }
 }
 
-fn run(_arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
+// The rest of the system can effect changes in parts of the GUI by sending messages of this type
+// to the GUIInput channel (sender), obtained from the GUI.
+#[derive(Clone, PartialEq, Copy)]
+pub enum GUIInputMessage {
+    SignalStrength(f32)
+}
+
+// Internal GUI messaging
+#[derive(Clone, Debug)]
+pub enum Message {
+    SetAmplitude(f32),
+}
+
+// The GUI controls can effect changes in the rest of the system via this facade...
+pub trait GUIOutput {
+    fn set_frequency(&mut self, frequency_hz: u32);
+    fn set_amplitude(&mut self, amplitude: f32); // 0.0 -> 1.0
+}
+
+
+pub const WIDGET_PADDING: i32 = 10;
+
+const WIDGET_HEIGHT: i32 = 25;
+
+const WATERFALL_WIDTH: i32 = 1000;
+const WATERFALL_HEIGHT: i32 = 500;
+
+// Central controls column
+const CENTRAL_CONTROLS_WIDTH: i32 = 240;
+
+struct Gui {
+    gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
+    gui_output: Arc<Mutex<dyn GUIOutput>>,
+    sender: fltk::app::Sender<Message>,
+    receiver: fltk::app::Receiver<Message>,
+    thread_handle: Mutex<Option<JoinHandle<()>>>,
+    window_width: i32,
+    window_height: i32,
+
+}
+
+impl Gui {
+    pub fn new(gui_output: Arc<Mutex<dyn GUIOutput>>, terminate: Arc<AtomicBool>) -> Self {
+        debug!("Initialising Window");
+        let mut wind = Window::default().with_label(format!("qdx-receiver v{} de M0CUV", VERSION).as_str());
+        let window_background = Color::from_hex_str("#dfe2ff").unwrap();
+
+        let thread_terminate = terminate.clone();
+        let (gui_input_tx, gui_input_rx) = sync_channel::<GUIInputMessage>(16);
+
+        let (sender, receiver) = channel::<Message>();
+        let gui = Gui {
+            gui_input_tx: Arc::new(gui_input_tx),
+            gui_output,
+            sender,
+            receiver,
+            window_width: WIDGET_PADDING + WATERFALL_WIDTH + WIDGET_PADDING + CENTRAL_CONTROLS_WIDTH + WIDGET_PADDING,
+            window_height: WIDGET_PADDING + WATERFALL_HEIGHT + WIDGET_PADDING + WIDGET_HEIGHT + WIDGET_PADDING,
+            thread_handle: Mutex::new(None),
+        };
+        wind.set_size(gui.window_width, gui.window_height);
+        wind.set_color(window_background);
+
+        // Functions called on the GUI by the rest of the system...
+        let thread_gui_sender = gui.sender.clone();
+        let thread_handle = thread::spawn(move || {
+            loop {
+                if thread_terminate.load(Ordering::SeqCst) {
+                    info!("Terminating GUI input thread");
+                    break;
+                }
+
+                if let Ok(gui_input_message) = gui_input_rx.recv_timeout(Duration::from_millis(250)) {
+                    match gui_input_message {
+                        GUIInputMessage::SignalStrength(amplitude) => {
+                            thread_gui_sender.send(Message::SetAmplitude(amplitude));
+                        }
+                    }
+                }
+            }
+        });
+
+        *gui.thread_handle.lock().unwrap() = Some(thread_handle);
+
+        wind.end();
+        debug!("Showing main window");
+        wind.show();
+        debug!("Starting app wait loop");
+        gui
+    }
+
+    pub fn message_handle(&mut self) {
+        match self.receiver.recv() {
+            None => {
+                // noop
+            }
+            Some(message) => {
+                info!("App message {:?}", message);
+                match message {
+                    Message::SetAmplitude(amplitude) => {
+                        info!("Setting amplitude to {}", amplitude);
+                        self.gui_output.lock().unwrap().set_amplitude(amplitude);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn gui_input_sender(&self) -> Arc<mpsc::SyncSender<GUIInputMessage>> {
+        self.gui_input_tx.clone()
+    }
+
+}
+
+fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Result<i32, Box<dyn Error>> {
     // let home_dir = dirs::home_dir();
     // let config_path = config_dir::configuration_directory(home_dir)?;
     // let config_path_clone = config_path.clone();
@@ -241,6 +372,9 @@ fn run(_arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
         return Ok(0)
     }
 
+    let terminate = Arc::new(AtomicBool::new(false));
+    let gui_terminate = terminate.clone();
+
     info!("Initialising QDX input device...");
     let (_qdx_input, qdx_params) = get_qdx_input_device(&pa)?;
     info!("Initialising speaker output device...");
@@ -249,12 +383,19 @@ fn run(_arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
     let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
 
-    let mut receiver = Receiver::new();
-    info!("Starting duplex callback...");
-    receiver.start_duplex_callback(&pa, duplex_settings)?;
+    let receiver = Arc::new(Mutex::new(Receiver::new()));
+    let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
 
-    info!("Sleeping 10s...");
-    thread::sleep(Duration::from_secs(10));
+    let mut gui = Gui::new(receiver_gui_output, gui_terminate);
+
+    info!("Starting duplex callback...");
+    receiver.lock().unwrap().start_duplex_callback(&pa, duplex_settings)?;
+
+    info!("Start of app wait loop");
+    while app.unwrap().wait() {
+        gui.message_handle();
+    }
+    info!("End of app wait loop");
 
     info!("Exiting");
     Ok(0)
@@ -266,12 +407,12 @@ fn main() {
     let (arguments, mode) = parse_command_line();
     debug!("Command line parsed");
 
+    let mut app: Option<fltk::app::App> = None;
     if mode == Mode::GUI {
-        let _app = app::App::default().with_scheme(Scheme::Gleam);
-        // TODO this should be passed to the GUI code.
+        app = Some(app::App::default().with_scheme(Scheme::Gleam));
     }
 
-    match run(arguments, mode.clone()) {
+    match run(arguments, mode.clone(), app) {
         Err(err) => {
             match mode {
                 Mode::GUI => {
