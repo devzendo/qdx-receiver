@@ -1,3 +1,8 @@
+// -------------------------------------------------------------------------------------------------
+// qdx-receiver
+// (C) 2023 Matt Gumbley M0CUV
+// -------------------------------------------------------------------------------------------------
+
 #[macro_use]
 extern crate clap;
 extern crate portaudio;
@@ -23,6 +28,11 @@ use fltk::valuator::ValueSlider;
 use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 use portaudio::stream::Parameters;
+use serialport::{SerialPortInfo, SerialPortType};
+
+// -------------------------------------------------------------------------------------------------
+// COMMAND LINE HANDLING AND LOGGING
+// -------------------------------------------------------------------------------------------------
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -86,6 +96,56 @@ fn parse_command_line<'a>() -> (ArgMatches<'a>, Mode) {
 
     return (result, mode);
 }
+
+// -------------------------------------------------------------------------------------------------
+// SERIAL PORT
+// -------------------------------------------------------------------------------------------------
+
+pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
+    let ports = serialport::available_ports()?;
+    info!("Scanning serial ports...");
+    for p in ports {
+        debug!("Port {:?}", p);
+        let return_p = p.clone();
+        let match_p = p.clone();
+        match match_p.port_type {
+            SerialPortType::UsbPort(usb) => {
+                if usb.product == Some("QDX Transceiver".to_string()) {
+                    let found = return_p.clone();
+                    let returned = return_p.clone();
+                    info!("Found QDX Transceiver as {:?}", found);
+                    return Ok(returned);
+                }
+            }
+            SerialPortType::PciPort => {}
+            SerialPortType::BluetoothPort => {}
+            SerialPortType::Unknown => {}
+        }
+    }
+    Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find QDX USB serial device")))
+}
+
+
+// -------------------------------------------------------------------------------------------------
+// CAT - COMPUTER AIDED TRANSCEIVER
+// -------------------------------------------------------------------------------------------------
+
+struct Cat {
+    serial_port: String,
+}
+
+impl Cat {
+    pub fn new(serial_port: String) -> Result<Cat, Box<dyn Error>> {
+        let cat = Self {
+            serial_port,
+        };
+        Ok(cat)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// AUDIO INTERFACING
+// -------------------------------------------------------------------------------------------------
 
 // PortAudio constants
 const INTERLEAVED: bool = true;
@@ -247,6 +307,10 @@ impl Drop for Receiver {
         info!("Stopping duplex stream: {:?}", self.duplex_stream.as_mut().unwrap().stop());
     }
 }
+
+// -------------------------------------------------------------------------------------------------
+// GRAPHICAL USER INTERFACE
+// -------------------------------------------------------------------------------------------------
 
 // The rest of the system can effect changes in parts of the GUI by sending messages of this type
 // to the GUIInput channel (sender), obtained from the GUI.
@@ -661,6 +725,10 @@ impl Gui {
     }
 }
 
+// -------------------------------------------------------------------------------------------------
+// MAIN
+// -------------------------------------------------------------------------------------------------
+
 fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Result<i32, Box<dyn Error>> {
     // let home_dir = dirs::home_dir();
     // let config_path = config_dir::configuration_directory(home_dir)?;
@@ -686,6 +754,10 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
 
     let terminate = Arc::new(AtomicBool::new(false));
     let gui_terminate = terminate.clone();
+
+    info!("Initialising serial input device...");
+    let serial_port = find_qdx_serial_port()?;
+    let cat = Cat::new(serial_port.port_name)?;
 
     info!("Initialising QDX input device...");
     let (_qdx_input, qdx_params) = get_qdx_input_device(&pa)?;
@@ -743,3 +815,6 @@ fn main() {
     }
 }
 
+// -------------------------------------------------------------------------------------------------
+// FIN
+// -------------------------------------------------------------------------------------------------
