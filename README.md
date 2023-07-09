@@ -28,10 +28,12 @@ Plus you could use it to tune around and find other interesting signals!
 
 ## Project Status
 Project started 9 Jul 2023, currently very rough, not fully working.
+My priorities:
 * No GUI yet.
-* No configuration yet. 
-* No packaging/release system yet. Build it yourself from source.
 * No CAT control yet - no tuning.
+* No configuration yet (to store the last tuned frequency).
+Needed before a proper release:
+* No packaging/release system yet. Build it yourself from source.
 * Finds the QDX audio output device, but only finds the speaker device as named on a MacBook or my old Windows laptop. (Eventually you'll be able to choose this.)
 * Developed and tested best on macOS Catalina. Should build on Linux and Windows.
 
