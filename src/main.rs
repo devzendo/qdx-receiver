@@ -148,11 +148,14 @@ pub fn get_speaker_output_device(pa: &PortAudio) -> Result<OutputStreamSettings<
     Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find speaker output device")))
 }
 
+pub const BUFFER_SIZE: usize = 128; // determined by watching what portaudio gives the callbacks.
+
 #[derive(Clone)]
 pub struct CallbackData {
     amplitude: f32,
     delta_phase: f32, // added to the phase after recording each sample
     phase: f32,       // sin(phase) is the sample value
+    buffer: Vec<f32>,
 }
 
 struct Receiver {
@@ -164,10 +167,14 @@ struct Receiver {
 
 impl Receiver {
     pub fn new(audio_frequency: u16) -> Self {
+        let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+        buffer.resize(BUFFER_SIZE, 0_f32);
+
         let callback_data = CallbackData {
             amplitude: 0.5,
             delta_phase: 0.0,
             phase: 0.0,
+            buffer,
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
@@ -193,28 +200,19 @@ impl Receiver {
             // One frame is a pair of left/right channel samples.
             // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
             // 1000/750=1.33333 so each buffer has a duration of 1.33333ms.
-/*            let mut idx = 0;
-
-            for _ in 0..frames {
-                // The processing of amplitude/phase needs to be done every frame.
-                let mut callback_data = move_clone_callback_data.write().unwrap();
-                callback_data.phase += callback_data.delta_phase;
-                let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
-                drop(callback_data);
-
+            let mut callback_data = move_clone_callback_data.write().unwrap();
+            // let idx = 0;
+            for idx in 0..frames * 2 {
                 // TODO MONO - if opening the stream with a single channel causes the same values to
                 // be written to both left and right outputs, this could be optimised..
-                buffer[idx] = sine_val;
-                buffer[idx + 1] = sine_val;
-
-                idx += 2;
+                callback_data.buffer[idx] = buffer[idx];
+                //info!("buffer [{}]={}", idx, buffer[idx]);
             }
+            drop(callback_data);
             // idx is 128...
-*/
+
             pa::Continue
         };
-        // we won't output out of range samples so don't bother clipping them.
-        input_settings.flags = pa::stream_flags::CLIP_OFF;
 
         let maybe_stream = pa.open_non_blocking_stream(input_settings, callback);
         match maybe_stream {
@@ -247,22 +245,17 @@ impl Receiver {
             // One frame is a pair of left/right channel samples.
             // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
             // 1000/750=1.33333 so each buffer has a duration of 1.33333ms.
-            let mut idx = 0;
-
-            for _ in 0..frames {
-                // The processing of amplitude/phase needs to be done every frame.
-                let mut callback_data = move_clone_callback_data.write().unwrap();
-                callback_data.phase += callback_data.delta_phase;
-                let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
-                drop(callback_data);
-
+            let mut callback_data = move_clone_callback_data.write().unwrap();
+            // let idx = 0;
+            for idx in 0..frames * 2 {
                 // TODO MONO - if opening the stream with a single channel causes the same values to
                 // be written to both left and right outputs, this could be optimised..
-                buffer[idx] = sine_val;
-                buffer[idx + 1] = sine_val;
+                // callback_data.phase += callback_data.delta_phase;
+                // let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
 
-                idx += 2;
+                buffer[idx] = callback_data.buffer[idx] * 20.00; // why a scaling factor? why is input so quiet? don't know!
             }
+            drop(callback_data);
             // idx is 128...
             pa::Continue
         };
