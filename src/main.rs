@@ -3,8 +3,7 @@ extern crate clap;
 extern crate portaudio;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex, RwLock};
-use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, RwLock};
 use std::{env, thread};
 use std::f32::consts::PI;
 use std::time::Duration;
@@ -109,7 +108,6 @@ pub fn list_audio_devices(pa: &PortAudio) -> Result<i32, Box<dyn Error>> {
 }
 
 pub fn get_qdx_input_device(pa: &PortAudio) -> Result<InputStreamSettings<f32>, Box<dyn Error>> {
-    let num_devices = pa.device_count()?;
     for device in pa.devices()? {
         let (idx, info) = device?;
 
@@ -171,9 +169,7 @@ impl Receiver {
             phase: 0.0,
         };
 
-        // TODO replace this Mutex with atomics to reduce contention in the callback.
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
-        let move_clone_callback_data = arc_lock_callback_data.clone();
         Self {
             output_stream: None,
             callback_data: arc_lock_callback_data,
@@ -241,7 +237,7 @@ impl Drop for Receiver {
     }
 }
 
-fn run(arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
+fn run(_arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     // let home_dir = dirs::home_dir();
     // let config_path = config_dir::configuration_directory(home_dir)?;
     // let config_path_clone = config_path.clone();
@@ -261,7 +257,7 @@ fn run(arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     }
 
     info!("Initialising QDX input device...");
-    let qdx_input = get_qdx_input_device(&pa)?;
+    let _qdx_input = get_qdx_input_device(&pa)?;
     info!("Initialising speaker output device...");
     let speaker_output = get_speaker_output_device(&pa)?;
 
