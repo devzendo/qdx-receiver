@@ -6,7 +6,7 @@ use std::error::Error;
 use std::sync::{Arc, mpsc, Mutex, RwLock};
 use std::{env, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::sync_channel;
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -164,11 +164,11 @@ pub struct CallbackData {
 struct Receiver {
     duplex_stream: Option<Stream<NonBlocking, Duplex<f32, f32>>>,
     callback_data: Arc<RwLock<CallbackData>>,
+    gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
 }
 
 impl Receiver {
     pub fn new() -> Self {
-
         let callback_data = CallbackData {
             amplitude: 20.0,
         };
@@ -177,7 +177,12 @@ impl Receiver {
         Self {
             duplex_stream: None,
             callback_data: arc_lock_callback_data,
+            gui_input: None,
         }
+    }
+
+    pub fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
+        self.gui_input = Some(gui_input);
     }
 
     // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
@@ -253,6 +258,7 @@ pub enum Message {
 }
 
 // The GUI controls can effect changes in the rest of the system via this facade...
+// ... which is implemented by the Receiver.
 pub trait GUIOutput {
     fn set_frequency(&mut self, frequency_hz: u32);
     fn set_amplitude(&mut self, amplitude: f32); // 0.0 -> 1.0
@@ -314,7 +320,8 @@ impl Gui {
                 if let Ok(gui_input_message) = gui_input_rx.recv_timeout(Duration::from_millis(250)) {
                     match gui_input_message {
                         GUIInputMessage::SignalStrength(amplitude) => {
-                            thread_gui_sender.send(Message::SetAmplitude(amplitude));
+                            info!("Signal strength is {}", amplitude);
+                            // thread_gui_sender.send(Message::SetAmplitude(amplitude));
                         }
                     }
                 }
@@ -347,10 +354,10 @@ impl Gui {
         }
     }
 
+    // Use this to send update messages to the GUI.
     pub fn gui_input_sender(&self) -> Arc<mpsc::SyncSender<GUIInputMessage>> {
         self.gui_input_tx.clone()
     }
-
 }
 
 fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Result<i32, Box<dyn Error>> {
@@ -387,6 +394,8 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
 
     let mut gui = Gui::new(receiver_gui_output, gui_terminate);
+    let gui_input = gui.gui_input_sender();
+    receiver.lock().unwrap().set_gui_input(gui_input);
 
     info!("Starting duplex callback...");
     receiver.lock().unwrap().start_duplex_callback(&pa, duplex_settings)?;
