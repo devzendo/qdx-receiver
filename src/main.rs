@@ -13,7 +13,7 @@ use clap::arg_enum;
 use fltk::app;
 use log::{debug, error, info, warn};
 use fltk::app::*;
-use portaudio::{InputStreamSettings, NonBlocking, Output, OutputStreamSettings, PortAudio, Stream};
+use portaudio::{Input, InputStreamSettings, NonBlocking, Output, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -157,6 +157,7 @@ pub struct CallbackData {
 
 struct Receiver {
     output_stream: Option<Stream<NonBlocking, Output<f32>>>,
+    input_stream: Option<Stream<NonBlocking, Input<f32>>>,
     callback_data: Arc<RwLock<CallbackData>>,
     audio_frequency: u16,
 }
@@ -172,10 +173,64 @@ impl Receiver {
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
         Self {
             output_stream: None,
+            input_stream: None,
             callback_data: arc_lock_callback_data,
             audio_frequency,
         }
     }
+
+    // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
+    // returning the callback to the caller to do stuff with... is because I can't work out what
+    // the correct type signature of a callback-returning function should be.
+    pub fn start_input_callback(&mut self, pa: &PortAudio, mut input_settings: InputStreamSettings<f32>) -> Result<(), Box<dyn Error>> {
+        let sample_rate = input_settings.sample_rate as u32;
+
+        let move_clone_callback_data = self.callback_data.clone();
+
+        let callback = move |pa::InputStreamCallbackArgs::<f32> { buffer, frames, .. }| {
+            //info!("input buffer length is {}, frames is {}", buffer.len(), frames);
+            // buffer length is 128, frames is 64; idx goes from [0..128).
+            // One frame is a pair of left/right channel samples.
+            // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
+            // 1000/750=1.33333 so each buffer has a duration of 1.33333ms.
+/*            let mut idx = 0;
+
+            for _ in 0..frames {
+                // The processing of amplitude/phase needs to be done every frame.
+                let mut callback_data = move_clone_callback_data.write().unwrap();
+                callback_data.phase += callback_data.delta_phase;
+                let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
+                drop(callback_data);
+
+                // TODO MONO - if opening the stream with a single channel causes the same values to
+                // be written to both left and right outputs, this could be optimised..
+                buffer[idx] = sine_val;
+                buffer[idx + 1] = sine_val;
+
+                idx += 2;
+            }
+            // idx is 128...
+*/
+            pa::Continue
+        };
+        // we won't output out of range samples so don't bother clipping them.
+        input_settings.flags = pa::stream_flags::CLIP_OFF;
+
+        let maybe_stream = pa.open_non_blocking_stream(input_settings, callback);
+        match maybe_stream {
+            Ok(mut stream) => {
+                info!("Starting input stream");
+                stream.start()?;
+                self.input_stream = Some(stream);
+            }
+            Err(e) => {
+                warn!("Error opening input stream: {}", e);
+            }
+        }
+        Ok(())
+        // Now it's playing...
+    }
+
 
     // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
     // returning the callback to the caller to do stuff with... is because I can't work out what
@@ -187,7 +242,7 @@ impl Receiver {
         let move_clone_callback_data = self.callback_data.clone();
 
         let callback = move |pa::OutputStreamCallbackArgs::<f32> { buffer, frames, .. }| {
-            //info!("buffer length is {}, frames is {}", buffer.len(), frames);
+            //info!("output buffer length is {}, frames is {}", buffer.len(), frames);
             // buffer length is 128, frames is 64; idx goes from [0..128).
             // One frame is a pair of left/right channel samples.
             // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
@@ -218,7 +273,7 @@ impl Receiver {
         let maybe_stream = pa.open_non_blocking_stream(output_settings, callback);
         match maybe_stream {
             Ok(mut stream) => {
-                info!("Starting stream");
+                info!("Starting output stream");
                 stream.start()?;
                 self.output_stream = Some(stream);
             }
@@ -234,6 +289,7 @@ impl Receiver {
 impl Drop for Receiver {
     fn drop(&mut self) {
         info!("Stopping output stream: {:?}", self.output_stream.as_mut().unwrap().stop());
+        info!("Stopping input stream: {:?}", self.input_stream.as_mut().unwrap().stop());
     }
 }
 
@@ -257,11 +313,13 @@ fn run(_arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     }
 
     info!("Initialising QDX input device...");
-    let _qdx_input = get_qdx_input_device(&pa)?;
+    let qdx_input = get_qdx_input_device(&pa)?;
     info!("Initialising speaker output device...");
     let speaker_output = get_speaker_output_device(&pa)?;
 
     let mut receiver = Receiver::new(600);
+    info!("Starting input callback...");
+    receiver.start_input_callback(&pa, qdx_input)?;
     info!("Starting output callback...");
     receiver.start_output_callback(&pa, speaker_output)?;
 
