@@ -3,7 +3,7 @@
 ## What is this?
 A small program to feed the audio from your QRP-Labs QDX digital transceiver through to your computer's speakers. Also
 gives you a small user interface in which you can see a signal-strength meter, control the output volume coming from
-your speakers, and to tune the QDX to a particular frequency.
+your speakers, and to tune the QDX to a particular frequency (receive SSB and other signals!).
 
 ## OK, Why?
 The QDX has the following characteristics:
@@ -24,8 +24,25 @@ tune to an empty part of the band, and assess the noise with my ears.
 
 That's where qdx-receiver could help.
 
+Plus you could use it to tune around and find other interesting signals!
+
 ## Project Status
 Project started 9 Jul 2023, currently very rough, not fully working.
+* No GUI yet.
+* No configuration yet. 
+* No packaging/release system yet. Build it yourself from source.
+* No CAT control yet - no tuning.
+* Finds the QDX audio output device, but only finds the speaker device as named on a MacBook or my old Windows laptop. (Eventually you'll be able to choose this.)
+* Developed and tested best on macOS Catalina. Should build on Linux and Windows.
+
+## Building
+There's no download yet, so to try it you'll need the Rust toolchain. See https://rustup.rs for how to obtain it.
+With modern Rust installed, clone this repo.
+From the command line, cd to your cloned repo, and do:
+`cargo build`
+Now make a nice cup of tea.
+To run, do:
+`cargo run`
 
 # License, Copyright & Contact info
 This code is released under the Apache 2.0 License: http://www.apache.org/licenses/LICENSE-2.0.html.
