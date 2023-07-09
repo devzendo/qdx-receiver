@@ -5,7 +5,6 @@ extern crate portaudio;
 use std::error::Error;
 use std::sync::{Arc, RwLock};
 use std::{env, thread};
-use std::f32::consts::PI;
 use std::time::Duration;
 
 use clap::{App, Arg, ArgMatches};
@@ -13,8 +12,9 @@ use clap::arg_enum;
 use fltk::app;
 use log::{debug, error, info, warn};
 use fltk::app::*;
-use portaudio::{Input, InputStreamSettings, NonBlocking, Output, OutputStreamSettings, PortAudio, Stream};
+use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
+use portaudio::stream::Parameters;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -107,7 +107,7 @@ pub fn list_audio_devices(pa: &PortAudio) -> Result<i32, Box<dyn Error>> {
     Ok(0)
 }
 
-pub fn get_qdx_input_device(pa: &PortAudio) -> Result<InputStreamSettings<f32>, Box<dyn Error>> {
+pub fn get_qdx_input_device(pa: &PortAudio) -> Result<(InputStreamSettings<f32>, Parameters<f32>), Box<dyn Error>> {
     for device in pa.devices()? {
         let (idx, info) = device?;
 
@@ -118,7 +118,7 @@ pub fn get_qdx_input_device(pa: &PortAudio) -> Result<InputStreamSettings<f32>, 
         if is_qdx_input {
             info!("Using {:?} as QDX input device", info);
             let settings = InputStreamSettings::new(input_params, SAMPLE_RATE, FRAMES_PER_BUFFER);
-            return Ok(settings);
+            return Ok((settings, input_params));
         }
     }
     Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find QDX input device")))
@@ -131,7 +131,7 @@ pub fn is_speaker_name(x: &str) -> bool {
     // works - need to assess the DeviceInfo better on windows
 }
 
-pub fn get_speaker_output_device(pa: &PortAudio) -> Result<OutputStreamSettings<f32>, Box<dyn Error>> {
+pub fn get_speaker_output_device(pa: &PortAudio) -> Result<(OutputStreamSettings<f32>, Parameters<f32>), Box<dyn Error>> {
     for device in pa.devices()? {
         let (idx, info) = device?;
 
@@ -142,7 +142,7 @@ pub fn get_speaker_output_device(pa: &PortAudio) -> Result<OutputStreamSettings<
         if is_speaker_name(info.name) && out_channels == 2 && out_48k_supported {
             info!("Using {:?} as audio output device", info);
             let settings = OutputStreamSettings::new(output_params, SAMPLE_RATE, FRAMES_PER_BUFFER);
-            return Ok(settings);
+            return Ok((settings, output_params));
         }
     }
     Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find speaker output device")))
@@ -153,125 +153,62 @@ pub const BUFFER_SIZE: usize = 128; // determined by watching what portaudio giv
 #[derive(Clone)]
 pub struct CallbackData {
     amplitude: f32,
-    delta_phase: f32, // added to the phase after recording each sample
-    phase: f32,       // sin(phase) is the sample value
-    buffer: Vec<f32>,
 }
 
 struct Receiver {
-    output_stream: Option<Stream<NonBlocking, Output<f32>>>,
-    input_stream: Option<Stream<NonBlocking, Input<f32>>>,
+    duplex_stream: Option<Stream<NonBlocking, Duplex<f32, f32>>>,
     callback_data: Arc<RwLock<CallbackData>>,
-    audio_frequency: u16,
 }
 
 impl Receiver {
-    pub fn new(audio_frequency: u16) -> Self {
-        let mut buffer = Vec::with_capacity(BUFFER_SIZE);
-        buffer.resize(BUFFER_SIZE, 0_f32);
+    pub fn new() -> Self {
 
         let callback_data = CallbackData {
-            amplitude: 0.5,
-            delta_phase: 0.0,
-            phase: 0.0,
-            buffer,
+            amplitude: 20.0,
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
         Self {
-            output_stream: None,
-            input_stream: None,
+            duplex_stream: None,
             callback_data: arc_lock_callback_data,
-            audio_frequency,
         }
     }
 
     // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
     // returning the callback to the caller to do stuff with... is because I can't work out what
     // the correct type signature of a callback-returning function should be.
-    pub fn start_input_callback(&mut self, pa: &PortAudio, mut input_settings: InputStreamSettings<f32>) -> Result<(), Box<dyn Error>> {
-        let sample_rate = input_settings.sample_rate as u32;
+    pub fn start_duplex_callback(&mut self, pa: &PortAudio, duplex_settings: DuplexStreamSettings<f32, f32>) -> Result<(), Box<dyn Error>> {
 
         let move_clone_callback_data = self.callback_data.clone();
 
-        let callback = move |pa::InputStreamCallbackArgs::<f32> { buffer, frames, .. }| {
-            //info!("input buffer length is {}, frames is {}", buffer.len(), frames);
-            // buffer length is 128, frames is 64; idx goes from [0..128).
-            // One frame is a pair of left/right channel samples.
-            // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
-            // 1000/750=1.33333 so each buffer has a duration of 1.33333ms.
-            let mut callback_data = move_clone_callback_data.write().unwrap();
-            // let idx = 0;
-            for idx in 0..frames * 2 {
-                // TODO MONO - if opening the stream with a single channel causes the same values to
-                // be written to both left and right outputs, this could be optimised..
-                callback_data.buffer[idx] = buffer[idx];
-                //info!("buffer [{}]={}", idx, buffer[idx]);
-            }
+        let callback = move |pa::DuplexStreamCallbackArgs::<f32, f32> { in_buffer, out_buffer, frames, .. }| {
+            //info!("input buffer length is {}, output buffer length is {}, frames is {}", in_buffer.len(), out_buffer.len(), frames);
+            // input buffer length is 128, output buffer length is 128, frames is 64
+            let callback_data = move_clone_callback_data.read().unwrap();
+            let amplitude = callback_data.amplitude;
             drop(callback_data);
-            // idx is 128...
 
-            pa::Continue
-        };
-
-        let maybe_stream = pa.open_non_blocking_stream(input_settings, callback);
-        match maybe_stream {
-            Ok(mut stream) => {
-                info!("Starting input stream");
-                stream.start()?;
-                self.input_stream = Some(stream);
-            }
-            Err(e) => {
-                warn!("Error opening input stream: {}", e);
-            }
-        }
-        Ok(())
-        // Now it's playing...
-    }
-
-
-    // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
-    // returning the callback to the caller to do stuff with... is because I can't work out what
-    // the correct type signature of a callback-returning function should be.
-    pub fn start_output_callback(&mut self, pa: &PortAudio, mut output_settings: OutputStreamSettings<f32>) -> Result<(), Box<dyn Error>> {
-        let sample_rate = output_settings.sample_rate as u32;
-        self.callback_data.write().unwrap().delta_phase = 2.0_f32 * PI * (self.audio_frequency as f32) / (sample_rate as f32);
-
-        let move_clone_callback_data = self.callback_data.clone();
-
-        let callback = move |pa::OutputStreamCallbackArgs::<f32> { buffer, frames, .. }| {
-            //info!("output buffer length is {}, frames is {}", buffer.len(), frames);
-            // buffer length is 128, frames is 64; idx goes from [0..128).
-            // One frame is a pair of left/right channel samples.
-            // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
-            // 1000/750=1.33333 so each buffer has a duration of 1.33333ms.
-            let mut callback_data = move_clone_callback_data.write().unwrap();
-            // let idx = 0;
             for idx in 0..frames * 2 {
                 // TODO MONO - if opening the stream with a single channel causes the same values to
                 // be written to both left and right outputs, this could be optimised..
                 // callback_data.phase += callback_data.delta_phase;
                 // let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
 
-                buffer[idx] = callback_data.buffer[idx] * 20.00; // why a scaling factor? why is input so quiet? don't know!
+                out_buffer[idx] = in_buffer[idx] * amplitude; // why a scaling factor? why is input so quiet? don't know!
             }
-            drop(callback_data);
-            // idx is 128...
+
             pa::Continue
         };
 
-        // we won't output out of range samples so don't bother clipping them.
-        output_settings.flags = pa::stream_flags::CLIP_OFF;
-
-        let maybe_stream = pa.open_non_blocking_stream(output_settings, callback);
+        let maybe_stream = pa.open_non_blocking_stream(duplex_settings, callback);
         match maybe_stream {
             Ok(mut stream) => {
-                info!("Starting output stream");
+                info!("Starting duplex stream");
                 stream.start()?;
-                self.output_stream = Some(stream);
+                self.duplex_stream = Some(stream);
             }
             Err(e) => {
-                warn!("Error opening output stream: {}", e);
+                warn!("Error opening duplex stream: {}", e);
             }
         }
         Ok(())
@@ -281,8 +218,7 @@ impl Receiver {
 
 impl Drop for Receiver {
     fn drop(&mut self) {
-        info!("Stopping output stream: {:?}", self.output_stream.as_mut().unwrap().stop());
-        info!("Stopping input stream: {:?}", self.input_stream.as_mut().unwrap().stop());
+        info!("Stopping duplex stream: {:?}", self.duplex_stream.as_mut().unwrap().stop());
     }
 }
 
@@ -306,15 +242,16 @@ fn run(_arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     }
 
     info!("Initialising QDX input device...");
-    let qdx_input = get_qdx_input_device(&pa)?;
+    let (_qdx_input, qdx_params) = get_qdx_input_device(&pa)?;
     info!("Initialising speaker output device...");
-    let speaker_output = get_speaker_output_device(&pa)?;
+    let (_speaker_output, speaker_params) = get_speaker_output_device(&pa)?;
 
-    let mut receiver = Receiver::new(600);
-    info!("Starting input callback...");
-    receiver.start_input_callback(&pa, qdx_input)?;
-    info!("Starting output callback...");
-    receiver.start_output_callback(&pa, speaker_output)?;
+    pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
+    let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
+
+    let mut receiver = Receiver::new();
+    info!("Starting duplex callback...");
+    receiver.start_duplex_callback(&pa, duplex_settings)?;
 
     info!("Sleeping 10s...");
     thread::sleep(Duration::from_secs(10));
