@@ -276,7 +276,7 @@ const METER_HEIGHT: i32 = 200;
 
 const DIGIT_WIDTH: i32 = 60;
 const DIGIT_HEIGHT: i32 = 40;
-const DIGIT_BUTTON_DIM: i32 = DIGIT_HEIGHT / 2;
+const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
 
 struct Gui {
     gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
@@ -291,22 +291,22 @@ struct Gui {
     frequency: u32,
     frequency_output: Output,
     up_button_7: Button,
-    // up_button_6: Button,
-    // up_button_5: Button,
-    // up_button_4: Button,
-    // up_button_3: Button,
-    // up_button_2: Button,
-    // up_button_1: Button,
-    // up_button_0: Button,
+    up_button_6: Button,
+    up_button_5: Button,
+    up_button_4: Button,
+    up_button_3: Button,
+    up_button_2: Button,
+    up_button_1: Button,
+    up_button_0: Button,
 
     dn_button_7: Button,
-    // dn_button_6: Button,
-    // dn_button_5: Button,
-    // dn_button_4: Button,
-    // dn_button_3: Button,
-    // dn_button_2: Button,
-    // dn_button_1: Button,
-    // dn_button_0: Button,
+    dn_button_6: Button,
+    dn_button_5: Button,
+    dn_button_4: Button,
+    dn_button_3: Button,
+    dn_button_2: Button,
+    dn_button_1: Button,
+    dn_button_0: Button,
 
 }
 
@@ -340,11 +340,67 @@ impl Gui {
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
                 .with_pos(WIDGET_PADDING + (0 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
                 .with_label("▲"),
+            up_button_6: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (1 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            up_button_5: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (2 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            up_button_4: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (3 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            up_button_3: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (4 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            up_button_2: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (5 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            up_button_1: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (6 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            up_button_0: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (7 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+
             dn_button_7: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
                 .with_pos(WIDGET_PADDING + (0 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
                 .with_label("▼"),
-
+            dn_button_6: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (1 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+            dn_button_5: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (2 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+            dn_button_4: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (3 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+            dn_button_3: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (4 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+            dn_button_2: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (5 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+            dn_button_1: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (6 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+            dn_button_0: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (7 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -358,13 +414,28 @@ impl Gui {
         });
 
         gui.frequency_output.set_color(window_background);
+        gui.frequency_output.set_text_font(Font::CourierBold);
         gui.frequency_output.set_text_color(Color::Black);
         gui.frequency_output.set_value(frequency.to_string().as_str()); // TODO this needs to vary; format it right
         gui.frequency_output.set_text_size(36);
         gui.frequency_output.set_readonly(true);
 
         gui.up_button_7.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(7));
+        gui.up_button_6.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(6));
+        gui.up_button_5.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(5));
+        gui.up_button_4.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(4));
+        gui.up_button_3.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(3));
+        gui.up_button_2.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(2));
+        gui.up_button_1.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(1));
+        gui.up_button_0.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(0));
         gui.dn_button_7.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(7));
+        gui.dn_button_6.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(6));
+        gui.dn_button_5.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(5));
+        gui.dn_button_4.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(4));
+        gui.dn_button_3.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(3));
+        gui.dn_button_2.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(2));
+        gui.dn_button_1.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(1));
+        gui.dn_button_0.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(0));
 
 
         wind.set_size(gui.window_width, gui.window_height);
