@@ -29,7 +29,8 @@ Plus you could use it to tune around and find other interesting signals!
 ## Project Status
 Project started 9 Jul 2023, currently very rough, not fully working.
 My priorities:
-* No GUI yet.
+* GUI unfinished.
+* Some audio artifacts.
 * No CAT control yet - no tuning.
 * No configuration yet (to store the last tuned frequency).
 Needed before a proper release:

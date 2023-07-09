@@ -14,12 +14,10 @@ use clap::{App, Arg, ArgMatches};
 use clap::arg_enum;
 use fltk::app;
 use log::{debug, error, info, warn};
-use fltk::app::*;
-use fltk::draw::{draw_rect, draw_rect_fill, pop_clip, push_clip, set_draw_color};
-use fltk::enums::{CallbackTrigger, Color};
-use fltk::prelude::{GroupExt, WidgetBase, WidgetExt};
-use fltk::widget::Widget;
-use fltk::window::Window;
+use fltk::{
+    app::*, button::*, draw::*, enums::*, /*menu::*,*/ prelude::*, /*valuator::*,*/ widget::*, window::*,
+};
+use fltk::output::Output;
 use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 use portaudio::stream::Parameters;
@@ -230,8 +228,8 @@ impl Receiver {
 }
 
 impl GUIOutput for Receiver {
-    fn set_frequency(&mut self, _frequency_hz: u32) {
-        error!("Unimplemented set_frequency");
+    fn set_frequency(&mut self, frequency_hz: u32) {
+        error!("Unimplemented set_frequency {}", frequency_hz);
     }
 
     fn set_amplitude(&mut self, amplitude: f32) {
@@ -257,6 +255,8 @@ pub enum GUIInputMessage {
 #[derive(Clone, Debug)]
 pub enum Message {
     SetAmplitude(f32),
+    IncrementFrequencyDigit(u32),
+    DecrementFrequencyDigit(u32),
 }
 
 // The GUI controls can effect changes in the rest of the system via this facade...
@@ -274,6 +274,10 @@ const WIDGET_HEIGHT: i32 = 25;
 const METER_WIDTH: i32 = 300;
 const METER_HEIGHT: i32 = 200;
 
+const DIGIT_WIDTH: i32 = 60;
+const DIGIT_HEIGHT: i32 = 40;
+const DIGIT_BUTTON_DIM: i32 = DIGIT_HEIGHT / 2;
+
 struct Gui {
     gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
     gui_output: Arc<Mutex<dyn GUIOutput>>,
@@ -284,11 +288,30 @@ struct Gui {
     window_height: i32,
 
     meter_canvas: Widget,
+    frequency: u32,
+    frequency_output: Output,
+    up_button_7: Button,
+    // up_button_6: Button,
+    // up_button_5: Button,
+    // up_button_4: Button,
+    // up_button_3: Button,
+    // up_button_2: Button,
+    // up_button_1: Button,
+    // up_button_0: Button,
+
+    dn_button_7: Button,
+    // dn_button_6: Button,
+    // dn_button_5: Button,
+    // dn_button_4: Button,
+    // dn_button_3: Button,
+    // dn_button_2: Button,
+    // dn_button_1: Button,
+    // dn_button_0: Button,
 
 }
 
 impl Gui {
-    pub fn new(gui_output: Arc<Mutex<dyn GUIOutput>>, terminate: Arc<AtomicBool>) -> Self {
+    pub fn new(gui_output: Arc<Mutex<dyn GUIOutput>>, terminate: Arc<AtomicBool>, frequency: u32) -> Self {
         debug!("Initialising Window");
         let mut wind = Window::default().with_label(format!("qdx-receiver v{} de M0CUV", VERSION).as_str());
         let window_background = Color::from_hex_str("#dfe2ff").unwrap();
@@ -305,9 +328,23 @@ impl Gui {
             receiver,
             thread_handle: Mutex::new(None),
             window_width: WIDGET_PADDING + METER_WIDTH + WIDGET_PADDING,
-            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + /* Stuff */ WIDGET_HEIGHT + WIDGET_PADDING,
+            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM  + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING,
 
             meter_canvas: Widget::new(WIDGET_PADDING, WIDGET_PADDING, METER_WIDTH, METER_HEIGHT, ""),
+            frequency,
+            frequency_output: Output::default()
+                .with_size(METER_WIDTH, DIGIT_HEIGHT)
+                .with_pos(WIDGET_PADDING, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING),
+
+            up_button_7: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (0 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_label("▲"),
+            dn_button_7: Button::default()
+                .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING + (0 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_label("▼"),
+
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -320,6 +357,14 @@ impl Gui {
             pop_clip();
         });
 
+        gui.frequency_output.set_color(window_background);
+        gui.frequency_output.set_text_color(Color::Black);
+        gui.frequency_output.set_value(frequency.to_string().as_str()); // TODO this needs to vary; format it right
+        gui.frequency_output.set_text_size(36);
+        gui.frequency_output.set_readonly(true);
+
+        gui.up_button_7.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(7));
+        gui.dn_button_7.emit(gui.sender.clone(), Message::DecrementFrequencyDigit(7));
 
 
         wind.set_size(gui.window_width, gui.window_height);
@@ -366,6 +411,20 @@ impl Gui {
                         info!("Setting amplitude to {}", amplitude);
                         self.gui_output.lock().unwrap().set_amplitude(amplitude);
                     }
+                    Message::IncrementFrequencyDigit(digit) => {
+                        info!("Previous frequency {}", self.frequency);
+                        let pow = 10_u32.pow(digit);
+                        self.frequency += pow;
+                        info!("New frequency {}", self.frequency);
+                        self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                    }
+                    Message::DecrementFrequencyDigit(digit) => {
+                        info!("Previous frequency {}", self.frequency);
+                        let pow = 10_u32.pow(digit);
+                        self.frequency -= pow;
+                        info!("New frequency {}", self.frequency);
+                        self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                    }
                 }
             }
         }
@@ -389,6 +448,8 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     //     info!("Configuration file is [{:?}]", config_file_path);
     //     return Ok(0)
     // }
+
+    let frequency: u32 = 14074000; // FT8 20m, TODO take from config
     let pa = PortAudio::new()?;
 
     if mode == Mode::ListAudioDevices {
@@ -410,7 +471,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     let receiver = Arc::new(Mutex::new(Receiver::new()));
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
 
-    let mut gui = Gui::new(receiver_gui_output, gui_terminate);
+    let mut gui = Gui::new(receiver_gui_output, gui_terminate, frequency);
     let gui_input = gui.gui_input_sender();
     receiver.lock().unwrap().set_gui_input(gui_input);
 
