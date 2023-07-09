@@ -3,9 +3,10 @@ extern crate clap;
 extern crate portaudio;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::AtomicBool;
 use std::{env, thread};
+use std::f32::consts::PI;
 use std::time::Duration;
 
 use clap::{App, Arg, ArgMatches};
@@ -13,7 +14,7 @@ use clap::arg_enum;
 use fltk::app;
 use log::{debug, error, info, warn};
 use fltk::app::*;
-use portaudio::{InputStreamSettings, OutputStreamSettings, PortAudio};
+use portaudio::{InputStreamSettings, NonBlocking, Output, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -149,6 +150,96 @@ pub fn get_speaker_output_device(pa: &PortAudio) -> Result<OutputStreamSettings<
     Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find speaker output device")))
 }
 
+#[derive(Clone)]
+pub struct CallbackData {
+    amplitude: f32,
+    delta_phase: f32, // added to the phase after recording each sample
+    phase: f32,       // sin(phase) is the sample value
+}
+
+struct Receiver {
+    output_stream: Option<Stream<NonBlocking, Output<f32>>>,
+    callback_data: Arc<RwLock<CallbackData>>,
+    audio_frequency: u16,
+}
+
+impl Receiver {
+    pub fn new(audio_frequency: u16) -> Self {
+        let callback_data = CallbackData {
+            amplitude: 0.5,
+            delta_phase: 0.0,
+            phase: 0.0,
+        };
+
+        // TODO replace this Mutex with atomics to reduce contention in the callback.
+        let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
+        let move_clone_callback_data = arc_lock_callback_data.clone();
+        Self {
+            output_stream: None,
+            callback_data: arc_lock_callback_data,
+            audio_frequency,
+        }
+    }
+
+    // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
+    // returning the callback to the caller to do stuff with... is because I can't work out what
+    // the correct type signature of a callback-returning function should be.
+    pub fn start_output_callback(&mut self, pa: &PortAudio, mut output_settings: OutputStreamSettings<f32>) -> Result<(), Box<dyn Error>> {
+        let sample_rate = output_settings.sample_rate as u32;
+        self.callback_data.write().unwrap().delta_phase = 2.0_f32 * PI * (self.audio_frequency as f32) / (sample_rate as f32);
+
+        let move_clone_callback_data = self.callback_data.clone();
+
+        let callback = move |pa::OutputStreamCallbackArgs::<f32> { buffer, frames, .. }| {
+            //info!("buffer length is {}, frames is {}", buffer.len(), frames);
+            // buffer length is 128, frames is 64; idx goes from [0..128).
+            // One frame is a pair of left/right channel samples.
+            // 48000/64=750 so in one second there are 48000 samples (frames), and 750 calls to this callback.
+            // 1000/750=1.33333 so each buffer has a duration of 1.33333ms.
+            let mut idx = 0;
+
+            for _ in 0..frames {
+                // The processing of amplitude/phase needs to be done every frame.
+                let mut callback_data = move_clone_callback_data.write().unwrap();
+                callback_data.phase += callback_data.delta_phase;
+                let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
+                drop(callback_data);
+
+                // TODO MONO - if opening the stream with a single channel causes the same values to
+                // be written to both left and right outputs, this could be optimised..
+                buffer[idx] = sine_val;
+                buffer[idx + 1] = sine_val;
+
+                idx += 2;
+            }
+            // idx is 128...
+            pa::Continue
+        };
+
+        // we won't output out of range samples so don't bother clipping them.
+        output_settings.flags = pa::stream_flags::CLIP_OFF;
+
+        let maybe_stream = pa.open_non_blocking_stream(output_settings, callback);
+        match maybe_stream {
+            Ok(mut stream) => {
+                info!("Starting stream");
+                stream.start()?;
+                self.output_stream = Some(stream);
+            }
+            Err(e) => {
+                warn!("Error opening output stream: {}", e);
+            }
+        }
+        Ok(())
+        // Now it's playing...
+    }
+}
+
+impl Drop for Receiver {
+    fn drop(&mut self) {
+        info!("Stopping output stream: {:?}", self.output_stream.as_mut().unwrap().stop());
+    }
+}
 
 fn run(arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     // let home_dir = dirs::home_dir();
@@ -173,6 +264,13 @@ fn run(arguments: ArgMatches, mode: Mode) -> Result<i32, Box<dyn Error>> {
     let qdx_input = get_qdx_input_device(&pa)?;
     info!("Initialising speaker output device...");
     let speaker_output = get_speaker_output_device(&pa)?;
+
+    let mut receiver = Receiver::new(600);
+    info!("Starting output callback...");
+    receiver.start_output_callback(&pa, speaker_output)?;
+
+    info!("Sleeping 10s...");
+    thread::sleep(Duration::from_secs(10));
 
     info!("Exiting");
     Ok(0)
