@@ -28,7 +28,7 @@ use fltk::valuator::ValueSlider;
 use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 use portaudio::stream::Parameters;
-use serialport::{SerialPortInfo, SerialPortType};
+use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortSettings, SerialPortType, StopBits};
 
 // -------------------------------------------------------------------------------------------------
 // COMMAND LINE HANDLING AND LOGGING
@@ -131,15 +131,41 @@ pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
 // -------------------------------------------------------------------------------------------------
 
 struct Cat {
-    serial_port: String,
+    port_name: String,
+    serial_port: Box<dyn SerialPort>,
 }
 
 impl Cat {
-    pub fn new(serial_port: String) -> Result<Cat, Box<dyn Error>> {
-        let cat = Self {
-            serial_port,
+    pub fn new(port_name: String) -> Result<Cat, Box<dyn Error>> {
+        info!("Opening serial port {}", port_name);
+        let settings = SerialPortSettings {
+            baud_rate: 38400, // it's irrelevant over USB
+            data_bits: DataBits::Eight,
+            flow_control: FlowControl::Hardware,
+            parity: Parity::None,
+            stop_bits: StopBits::One,
+            timeout: Duration::from_millis(250)
         };
-        Ok(cat)
+        return match serialport::open_with_settings(&port_name, &settings) {
+            Ok(serial_port) => {
+                info!("Port open");
+                let cat = Self {
+                    port_name,
+                    serial_port,
+                };
+                return Ok(cat)
+            }
+            Err(e) => {
+                return Err(Box::<dyn Error + Send + Sync>::from(format!("Failed to open serial port {}: {}", port_name, e)));
+            }
+        }
+    }
+}
+
+impl Drop for Cat {
+    fn drop(&mut self) {
+        info!("Flushing serial port");
+        self.serial_port.flush().expect("Could not flush");
     }
 }
 
