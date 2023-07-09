@@ -15,8 +15,10 @@ use clap::arg_enum;
 use fltk::app;
 use log::{debug, error, info, warn};
 use fltk::app::*;
-use fltk::enums::Color;
-use fltk::prelude::{GroupExt, WidgetExt};
+use fltk::draw::{draw_rect, draw_rect_fill, pop_clip, push_clip, set_draw_color};
+use fltk::enums::{CallbackTrigger, Color};
+use fltk::prelude::{GroupExt, WidgetBase, WidgetExt};
+use fltk::widget::Widget;
 use fltk::window::Window;
 use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
@@ -269,11 +271,8 @@ pub const WIDGET_PADDING: i32 = 10;
 
 const WIDGET_HEIGHT: i32 = 25;
 
-const WATERFALL_WIDTH: i32 = 1000;
-const WATERFALL_HEIGHT: i32 = 500;
-
-// Central controls column
-const CENTRAL_CONTROLS_WIDTH: i32 = 240;
+const METER_WIDTH: i32 = 300;
+const METER_HEIGHT: i32 = 200;
 
 struct Gui {
     gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
@@ -284,6 +283,8 @@ struct Gui {
     window_width: i32,
     window_height: i32,
 
+    meter_canvas: Widget,
+
 }
 
 impl Gui {
@@ -291,20 +292,36 @@ impl Gui {
         debug!("Initialising Window");
         let mut wind = Window::default().with_label(format!("qdx-receiver v{} de M0CUV", VERSION).as_str());
         let window_background = Color::from_hex_str("#dfe2ff").unwrap();
+        let meter_canvas_background = Color::from_hex_str("#aab0cb").unwrap();
 
         let thread_terminate = terminate.clone();
         let (gui_input_tx, gui_input_rx) = sync_channel::<GUIInputMessage>(16);
 
         let (sender, receiver) = channel::<Message>();
-        let gui = Gui {
+        let mut gui = Gui {
             gui_input_tx: Arc::new(gui_input_tx),
             gui_output,
             sender,
             receiver,
-            window_width: WIDGET_PADDING + WATERFALL_WIDTH + WIDGET_PADDING + CENTRAL_CONTROLS_WIDTH + WIDGET_PADDING,
-            window_height: WIDGET_PADDING + WATERFALL_HEIGHT + WIDGET_PADDING + WIDGET_HEIGHT + WIDGET_PADDING,
             thread_handle: Mutex::new(None),
+            window_width: WIDGET_PADDING + METER_WIDTH + WIDGET_PADDING,
+            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + /* Stuff */ WIDGET_HEIGHT + WIDGET_PADDING,
+
+            meter_canvas: Widget::new(WIDGET_PADDING, WIDGET_PADDING, METER_WIDTH, METER_HEIGHT, ""),
         };
+
+        gui.meter_canvas.set_trigger(CallbackTrigger::Release);
+        gui.meter_canvas.draw(move |wid| {
+            push_clip(wid.x(), wid.y(), wid.width(), wid.height());
+            draw_rect_fill(wid.x(), wid.y(), wid.width(), wid.height(), meter_canvas_background);
+
+            set_draw_color(Color::Black);
+            draw_rect(wid.x(), wid.y(), wid.width(), wid.height());
+            pop_clip();
+        });
+
+
+
         wind.set_size(gui.window_width, gui.window_height);
         wind.set_color(window_background);
 
