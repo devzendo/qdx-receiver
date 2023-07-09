@@ -18,6 +18,8 @@ use fltk::{
     app::*, button::*, draw::*, enums::*, /*menu::*,*/ prelude::*, /*valuator::*,*/ widget::*, window::*,
 };
 use fltk::output::Output;
+use fltk::valuator::SliderType::Horizontal;
+use fltk::valuator::ValueSlider;
 use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
 use portaudio as pa;
 use portaudio::stream::Parameters;
@@ -167,10 +169,12 @@ struct Receiver {
     gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
 }
 
+const AMPLITUDE_GAIN: f32 = 20.0;
+
 impl Receiver {
     pub fn new() -> Self {
         let callback_data = CallbackData {
-            amplitude: 20.0,
+            amplitude: 0.0,
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
@@ -196,7 +200,7 @@ impl Receiver {
             //info!("input buffer length is {}, output buffer length is {}, frames is {}", in_buffer.len(), out_buffer.len(), frames);
             // input buffer length is 128, output buffer length is 128, frames is 64
             let callback_data = move_clone_callback_data.read().unwrap();
-            let amplitude = callback_data.amplitude;
+            let amplitude = callback_data.amplitude * AMPLITUDE_GAIN;
             drop(callback_data);
 
             for idx in 0..frames * 2 {
@@ -281,6 +285,9 @@ const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
 
 const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 8;
 
+const MUTE_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 8;
+
+
 struct Gui {
     gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
     gui_output: Arc<Mutex<dyn GUIOutput>>,
@@ -321,10 +328,13 @@ struct Gui {
     band_12_button: Button,
     band_11_button: Button,
     band_10_button: Button,
+
+    amplitude: f32,
+    volume_slider: ValueSlider,
 }
 
 impl Gui {
-    pub fn new(gui_output: Arc<Mutex<dyn GUIOutput>>, terminate: Arc<AtomicBool>, frequency: u32) -> Self {
+    pub fn new(gui_output: Arc<Mutex<dyn GUIOutput>>, terminate: Arc<AtomicBool>, frequency: u32, amplitude: f32) -> Self {
         debug!("Initialising Window");
         let mut wind = Window::default().with_label(format!("qdx-receiver v{} de M0CUV", VERSION).as_str());
         let window_background = Color::from_hex_str("#dfe2ff").unwrap();
@@ -334,6 +344,8 @@ impl Gui {
         let (gui_input_tx, gui_input_rx) = sync_channel::<GUIInputMessage>(16);
 
         let (sender, receiver) = channel::<Message>();
+        let volume_sender_clone = sender.clone();
+
         let mut gui = Gui {
             gui_input_tx: Arc::new(gui_input_tx),
             gui_output,
@@ -341,7 +353,7 @@ impl Gui {
             receiver,
             thread_handle: Mutex::new(None),
             window_width: WIDGET_PADDING + METER_WIDTH + WIDGET_PADDING,
-            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM  + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING,
+            window_height: WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM  + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING + MUTE_BUTTON_DIM + WIDGET_PADDING,
 
             meter_canvas: Widget::new(WIDGET_PADDING, WIDGET_PADDING, METER_WIDTH, METER_HEIGHT, ""),
             frequency,
@@ -456,6 +468,10 @@ impl Gui {
                 .with_pos(WIDGET_PADDING + (9 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
                 .with_label("10"),
 
+            amplitude,
+            volume_slider: ValueSlider::default()
+                .with_size(METER_WIDTH - WIDGET_PADDING - MUTE_BUTTON_DIM, MUTE_BUTTON_DIM)
+                .with_pos(WIDGET_PADDING, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING),
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -503,6 +519,14 @@ impl Gui {
         gui.band_11_button.emit(gui.sender.clone(), Message::SetBandMetres(11));
         gui.band_10_button.emit(gui.sender.clone(), Message::SetBandMetres(10));
 
+        gui.volume_slider.set_text_color(Color::Black);
+        gui.volume_slider.set_bounds(0.0, 1.0);
+        gui.volume_slider.set_value(gui.amplitude as f64);
+        gui.volume_slider.set_type(Horizontal);
+        gui.volume_slider.set_callback(move |wid| {
+            volume_sender_clone.send(Message::SetAmplitude(wid.value() as f32));
+        });
+        gui.sender.clone().send(Message::SetAmplitude(gui.amplitude));
 
         wind.set_size(gui.window_width, gui.window_height);
         wind.set_color(window_background);
@@ -555,7 +579,7 @@ impl Gui {
                     Message::IncrementFrequencyDigit(digit) => {
                         info!("Previous frequency {}", self.frequency);
                         let pow = 10_u32.pow(digit);
-                        if (self.frequency + pow < 99999999) {
+                        if self.frequency + pow < 99999999 {
                             self.frequency += pow;
                             info!("New frequency {}", self.frequency);
                             self.gui_output.lock().unwrap().set_frequency(self.frequency);
@@ -567,7 +591,7 @@ impl Gui {
                     Message::DecrementFrequencyDigit(digit) => {
                         info!("Previous frequency {}", self.frequency);
                         let pow = 10_u32.pow(digit);
-                        if (self.frequency as i64 - pow as i64 >= 0) {
+                        if self.frequency as i64 - pow as i64 >= 0 {
                             self.frequency -= pow;
                             info!("New frequency {}", self.frequency);
                             self.gui_output.lock().unwrap().set_frequency(self.frequency);
@@ -620,6 +644,8 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     // }
 
     let frequency: u32 = 14074000; // FT8 20m, TODO take from config
+    let amplitude: f32 = 1.0; // Max; TODO take from config
+
     let pa = PortAudio::new()?;
 
     if mode == Mode::ListAudioDevices {
@@ -641,7 +667,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     let receiver = Arc::new(Mutex::new(Receiver::new()));
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
 
-    let mut gui = Gui::new(receiver_gui_output, gui_terminate, frequency);
+    let mut gui = Gui::new(receiver_gui_output, gui_terminate, frequency, amplitude);
     let gui_input = gui.gui_input_sender();
     receiver.lock().unwrap().set_gui_input(gui_input);
 
