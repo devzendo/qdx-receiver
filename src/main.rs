@@ -284,7 +284,7 @@ const DIGIT_WIDTH: i32 = 60;
 const DIGIT_HEIGHT: i32 = 40;
 const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
 
-const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 8;
+const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 10;
 
 const MUTE_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 12;
 
