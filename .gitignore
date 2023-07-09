@@ -1,0 +1,30 @@
+/log
+/target
+.git-credentials
+.DS_Store
+.vscode
+.idea
+.run
+*.iml
+*.bak
+*-eps-converted-to.pdf
+docs/make
+docs/out
+docs/*.aux
+docs/*.bbl
+docs/*.blg
+docs/*.fdb_latexmk
+docs/*.fls
+docs/*.log
+docs/*.toc
+docs/*.tpbuild
+*.out
+*.rtf#
+keying.csv
+
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
