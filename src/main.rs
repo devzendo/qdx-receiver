@@ -416,9 +416,9 @@ impl Gui {
         gui.frequency_output.set_color(window_background);
         gui.frequency_output.set_text_font(Font::CourierBold);
         gui.frequency_output.set_text_color(Color::Black);
-        gui.frequency_output.set_value(frequency.to_string().as_str()); // TODO this needs to vary; format it right
         gui.frequency_output.set_text_size(36);
         gui.frequency_output.set_readonly(true);
+        gui.show_frequency();
 
         gui.up_button_7.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(7));
         gui.up_button_6.emit(gui.sender.clone(), Message::IncrementFrequencyDigit(6));
@@ -470,6 +470,10 @@ impl Gui {
         gui
     }
 
+    fn show_frequency(&mut self) {
+        self.frequency_output.set_value(format!("{:08}",self.frequency).as_str());
+    }
+
     pub fn message_handle(&mut self) {
         match self.receiver.recv() {
             None => {
@@ -485,16 +489,26 @@ impl Gui {
                     Message::IncrementFrequencyDigit(digit) => {
                         info!("Previous frequency {}", self.frequency);
                         let pow = 10_u32.pow(digit);
-                        self.frequency += pow;
-                        info!("New frequency {}", self.frequency);
-                        self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                        if (self.frequency + pow < 99999999) {
+                            self.frequency += pow;
+                            info!("New frequency {}", self.frequency);
+                            self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                            self.show_frequency();
+                        } else {
+                            error!("Out of range!");
+                        }
                     }
                     Message::DecrementFrequencyDigit(digit) => {
                         info!("Previous frequency {}", self.frequency);
                         let pow = 10_u32.pow(digit);
-                        self.frequency -= pow;
-                        info!("New frequency {}", self.frequency);
-                        self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                        if (self.frequency as i64 - pow as i64 >= 0) {
+                            self.frequency -= pow;
+                            info!("New frequency {}", self.frequency);
+                            self.gui_output.lock().unwrap().set_frequency(self.frequency);
+                            self.show_frequency();
+                        } else {
+                            error!("Out of range!");
+                        }
                     }
                 }
             }
