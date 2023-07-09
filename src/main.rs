@@ -280,9 +280,9 @@ const WIDGET_HEIGHT: i32 = 25;
 const METER_WIDTH: i32 = 300;
 const METER_HEIGHT: i32 = 200;
 
-const DIGIT_WIDTH: i32 = 60;
 const DIGIT_HEIGHT: i32 = 40;
 const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
+const DIGIT_BUTTON_OFFSET: i32 = 4;
 
 const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 10;
 
@@ -349,6 +349,12 @@ impl Gui {
         let (sender, receiver) = channel::<Message>();
         let volume_sender_clone = sender.clone();
 
+        let up_button_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING;
+        let dn_button_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING;
+        let updn_button_x = WIDGET_PADDING + DIGIT_BUTTON_OFFSET;
+        let band_button_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING;
+        let volume_row_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING;
+
         let mut gui = Gui {
             gui_input_tx: Arc::new(gui_input_tx),
             gui_output,
@@ -361,124 +367,124 @@ impl Gui {
             meter_canvas: Widget::new(WIDGET_PADDING, WIDGET_PADDING, METER_WIDTH, METER_HEIGHT, ""),
             frequency,
             frequency_output: Output::default()
-                .with_size(METER_WIDTH, DIGIT_HEIGHT)
+                .with_size(DIGIT_BUTTON_DIM * 8 + 8, DIGIT_HEIGHT)
                 .with_pos(WIDGET_PADDING, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING),
 
             up_button_7: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (0 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (0 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_6: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (1 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (1 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_5: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (2 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (2 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_4: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (3 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (3 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_3: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (4 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (4 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_2: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (5 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (5 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_1: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (6 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (6 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
             up_button_0: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (7 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (7 * DIGIT_BUTTON_DIM), up_button_y)
                 .with_label("▲"),
 
             dn_button_7: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (0 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (0 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_6: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (1 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (1 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_5: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (2 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (2 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_4: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (3 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (3 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_3: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (4 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (4 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_2: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (5 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (5 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_1: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (6 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (6 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
             dn_button_0: Button::default()
                 .with_size(DIGIT_BUTTON_DIM, DIGIT_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (7 * DIGIT_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING)
+                .with_pos(updn_button_x + (7 * DIGIT_BUTTON_DIM), dn_button_y)
                 .with_label("▼"),
 
             band_80_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (0 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (0 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("80"),
             band_60_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (1 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (1 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("60"),
             band_40_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (2 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (2 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("40"),
             band_30_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (3 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (3 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("30"),
             band_20_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (4 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (4 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("20"),
             band_17_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (5 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (5 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("17"),
             band_15_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (6 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (6 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("15"),
             band_12_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (7 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (7 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("12"),
             band_11_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (8 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (8 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("11"),
             band_10_button: Button::default()
                 .with_size(BAND_BUTTON_DIM, BAND_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING + (9 * BAND_BUTTON_DIM), WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + (9 * BAND_BUTTON_DIM), band_button_y)
                 .with_label("10"),
 
             amplitude,
             volume_slider: ValueSlider::default()
                 .with_size(METER_WIDTH - WIDGET_PADDING - MUTE_BUTTON_DIM - WIDGET_PADDING, MUTE_BUTTON_DIM)
-                .with_pos(WIDGET_PADDING, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING),
+                .with_pos(WIDGET_PADDING, volume_row_y),
             muted: false,
             mute_button: Button::default()
                 .with_size(MUTE_BUTTON_DIM, MUTE_BUTTON_DIM)
-                .with_pos(METER_WIDTH - MUTE_BUTTON_DIM, WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING)
+                .with_pos(WIDGET_PADDING + METER_WIDTH - MUTE_BUTTON_DIM, volume_row_y)
                 .with_label("🔇"),
         };
 

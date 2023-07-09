@@ -32,15 +32,18 @@ My priorities:
 * GUI unfinished.
 * Some audio artifacts.
 * No CAT control yet - no tuning.
-* No configuration yet (to store the last tuned frequency).
+* No configuration yet (to store the last tuned frequency on each band; the last used frequency; the amplitude).
 Needed before a proper release:
 * No packaging/release system yet. Build it yourself from source.
 * Finds the QDX audio output device, but only finds the speaker device as named on a MacBook or my old Windows laptop. (Eventually you'll be able to choose this.)
 * Developed and tested best on macOS Catalina. Should build on Linux and Windows.
+Nice to have:
+* Make the GUI "beautiful".
 
 ## Building
 There's no download yet, so to try it you'll need the Rust toolchain. See https://rustup.rs for how to obtain it.
 With modern Rust installed, clone this repo.
+You'll also need to install portaudio and fltk. No docs on how to do this yet.
 From the command line, cd to your cloned repo, and do:
 `cargo build`
 Now make a nice cup of tea.
