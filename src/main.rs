@@ -11,7 +11,6 @@ use std::error::Error;
 use std::sync::{Arc, mpsc, Mutex, RwLock};
 use std::{env, thread};
 use std::io::Write;
-use std::str::Utf8Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread::JoinHandle;
@@ -134,7 +133,6 @@ pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
 // -------------------------------------------------------------------------------------------------
 
 struct Cat {
-    port_name: String,
     serial_port: Box<dyn SerialPort>,
 }
 
@@ -153,7 +151,6 @@ impl Cat {
             Ok(serial_port) => {
                 info!("Port open");
                 let cat = Self {
-                    port_name,
                     serial_port,
                 };
                 Ok(cat)
@@ -243,6 +240,7 @@ impl Cat {
 
     pub fn set_frequency(&mut self, frequency_hz: u32) -> Result<(), Box<dyn Error>> {
         self.send_request(format!("FA{};", frequency_hz).as_str())?;
+        Ok(())
     }
 }
 
@@ -405,8 +403,7 @@ impl Receiver {
 
 impl GUIOutput for Receiver {
     fn set_frequency(&mut self, frequency_hz: u32) {
-        info!("set_frequency {}", frequency_hz);
-        self.cat.lock().unwrap().set_frequency(frequency_hz);
+        self.cat.lock().unwrap().set_frequency(frequency_hz).unwrap();
     }
 
     fn set_amplitude(&mut self, amplitude: f32) {
@@ -451,8 +448,6 @@ pub trait GUIOutput {
 
 
 pub const WIDGET_PADDING: i32 = 10;
-
-const WIDGET_HEIGHT: i32 = 25;
 
 const METER_WIDTH: i32 = 300;
 const METER_HEIGHT: i32 = 200;
@@ -525,6 +520,19 @@ impl Gui {
 
         let (sender, receiver) = channel::<Message>();
         let volume_sender_clone = sender.clone();
+        let mouse_wheel_sender_clone = sender.clone();
+        wind.handle(move |_w, ev| {
+            if ev == Event::MouseWheel {
+                let dy = app::event_dy();
+                let message = if dy == MouseWheel::Down {
+                    Message::DecrementFrequencyDigit(2)
+                } else {
+                    Message::IncrementFrequencyDigit(2)
+                };
+                mouse_wheel_sender_clone.send(message);
+            }
+            false
+        });
 
         let up_button_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING;
         let dn_button_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING;
@@ -727,7 +735,7 @@ impl Gui {
         wind.set_color(window_background);
 
         // Functions called on the GUI by the rest of the system...
-        let thread_gui_sender = gui.sender.clone();
+        let _thread_gui_sender = gui.sender.clone();
         let thread_handle = thread::spawn(move || {
             loop {
                 if thread_terminate.load(Ordering::SeqCst) {
@@ -765,7 +773,7 @@ impl Gui {
                 // noop
             }
             Some(message) => {
-                info!("App message {:?}", message);
+                debug!("App message {:?}", message);
                 match message {
                     Message::SetAmplitude(amplitude) => {
                         info!("Setting amplitude to {}", amplitude);
@@ -773,7 +781,7 @@ impl Gui {
                         self.amplitude = amplitude;
                     }
                     Message::IncrementFrequencyDigit(digit) => {
-                        info!("Previous frequency {}", self.frequency);
+                        debug!("Previous frequency {}", self.frequency);
                         let pow = 10_u32.pow(digit);
                         if self.frequency + pow < 99999999 {
                             self.frequency += pow;
@@ -785,7 +793,7 @@ impl Gui {
                         }
                     }
                     Message::DecrementFrequencyDigit(digit) => {
-                        info!("Previous frequency {}", self.frequency);
+                        debug!("Previous frequency {}", self.frequency);
                         let pow = 10_u32.pow(digit);
                         if self.frequency as i64 - pow as i64 >= 0 {
                             self.frequency -= pow;
@@ -869,7 +877,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
 
     info!("Initialising serial input device...");
     let serial_port = find_qdx_serial_port()?;
-    let mut cat = Cat::new(serial_port.port_name)?;
+    let cat = Cat::new(serial_port.port_name)?;
     let arc_mutex_cat = Arc::new(Mutex::new(cat));
 
     let frequency: u32 = arc_mutex_cat.lock().unwrap().get_frequency()?;
