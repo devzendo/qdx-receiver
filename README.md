@@ -50,6 +50,9 @@ Now make a nice cup of tea.
 To run, do:
 `cargo run`
 
+# Notes
+* CAT spec at https://www.kenwood.com/i/products/info/amateur/ts_480/pdf/ts_480_pc.pdf
+
 # License, Copyright & Contact info
 This code is released under the Apache 2.0 License: http://www.apache.org/licenses/LICENSE-2.0.html.
 
