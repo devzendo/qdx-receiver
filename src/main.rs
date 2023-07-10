@@ -166,7 +166,12 @@ impl Cat {
 
     // Synchronous.. Expects request to be a valid ;-terminated CAT command; an Ok response contains
     // a valid ;-terminated CAT response.
-    fn transact(&mut self, request: String) -> Result<String, Box<dyn Error>> {
+    fn transact(&mut self, request: &str) -> Result<String, Box<dyn Error>> {
+        self.send_request(request)?;
+        self.receive_response(request)
+    }
+
+    fn send_request(&mut self, request: &str) -> Result<(), Box<dyn Error>> {
         let request_bytes = request.as_bytes();
         if request.len() < 3 {
             return Err(Box::<dyn Error + Send + Sync>::from(format!("A CAT request must be at least 3 characters long, this is {}", request_bytes.len())));
@@ -176,14 +181,23 @@ impl Cat {
         if result != request_bytes.len() {
             return Err(Box::<dyn Error + Send + Sync>::from(format!("Expected to write {} bytes to QDX; wrote {}", request_bytes.len(), result)));
         }
+        Ok(())
+    }
+
+    // Precondition: send_request has been used to validate and send the request.
+    fn receive_response(&mut self, request: &str) -> Result<String, Box<dyn Error>> {
+        let request_bytes = request.as_bytes();
+
         let mut received: Vec<u8> = vec![];
         loop {
             let mut byte = [0u8; 1];
             match self.serial_port.read(&mut byte) {
                 Ok(n) => {
                     assert!(n == 1);
+                    debug!("Received CAT response byte '{}'", byte[0]);
                     received.push(byte[0]);
                     if byte[0] == b';' {
+                        debug!("Received end of CAT response");
                         break;
                     }
                 }
@@ -214,7 +228,7 @@ impl Cat {
     }
 
     pub fn get_frequency(&mut self) -> Result<u32, Box<dyn Error>> {
-        let fa_response = self.transact("FA;".to_string())?;
+        let fa_response = self.transact("FA;")?;
         let fa_response_regex = Regex::new(r"FA(\d{11});").unwrap();
         match fa_response_regex.captures(fa_response.as_str()) {
             Some(captures) => {
@@ -225,6 +239,10 @@ impl Cat {
             },
             None => Err(Box::<dyn Error + Send + Sync>::from(format!("Unexpected 'frequency' response: '{}'", fa_response)))
         }
+    }
+
+    pub fn set_frequency(&mut self, frequency_hz: u32) -> Result<(), Box<dyn Error>> {
+        self.send_request(format!("FA{};", frequency_hz).as_str())?;
     }
 }
 
@@ -319,12 +337,13 @@ struct Receiver {
     duplex_stream: Option<Stream<NonBlocking, Duplex<f32, f32>>>,
     callback_data: Arc<RwLock<CallbackData>>,
     gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
+    cat: Arc<Mutex<Cat>>,
 }
 
 const AMPLITUDE_GAIN: f32 = 20.0;
 
 impl Receiver {
-    pub fn new() -> Self {
+    pub fn new(cat: Arc<Mutex<Cat>>) -> Self {
         let callback_data = CallbackData {
             amplitude: 0.0,
         };
@@ -334,6 +353,7 @@ impl Receiver {
             duplex_stream: None,
             callback_data: arc_lock_callback_data,
             gui_input: None,
+            cat,
         }
     }
 
@@ -385,7 +405,8 @@ impl Receiver {
 
 impl GUIOutput for Receiver {
     fn set_frequency(&mut self, frequency_hz: u32) {
-        error!("Unimplemented set_frequency {}", frequency_hz);
+        info!("set_frequency {}", frequency_hz);
+        self.cat.lock().unwrap().set_frequency(frequency_hz);
     }
 
     fn set_amplitude(&mut self, amplitude: f32) {
@@ -834,7 +855,6 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     //     return Ok(0)
     // }
 
-    let frequency: u32 = 14074000; // FT8 20m, TODO take from config
     let amplitude: f32 = 1.0; // Max; TODO take from config
 
     let pa = PortAudio::new()?;
@@ -850,8 +870,10 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     info!("Initialising serial input device...");
     let serial_port = find_qdx_serial_port()?;
     let mut cat = Cat::new(serial_port.port_name)?;
+    let arc_mutex_cat = Arc::new(Mutex::new(cat));
 
-    info!("QDX on frequency at {:?}", cat.get_frequency()?);
+    let frequency: u32 = arc_mutex_cat.lock().unwrap().get_frequency()?;
+    info!("QDX on frequency at {:?}", frequency);
 
     info!("Initialising QDX input device...");
     let (_qdx_input, qdx_params) = get_qdx_input_device(&pa)?;
@@ -861,7 +883,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
     let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
 
-    let receiver = Arc::new(Mutex::new(Receiver::new()));
+    let receiver = Arc::new(Mutex::new(Receiver::new(arc_mutex_cat.clone())));
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
 
     let mut gui = Gui::new(receiver_gui_output, gui_terminate, frequency, amplitude);
