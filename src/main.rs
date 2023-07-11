@@ -36,7 +36,7 @@ use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, Seri
 // COMMAND LINE HANDLING AND LOGGING
 // -------------------------------------------------------------------------------------------------
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn initialise_logging() {
     let log_var_name = "RUST_LOG";
@@ -56,9 +56,9 @@ const CAT_HELP: &str = "Sets the port that the QDX CAT interface is available on
 #[cfg(not(windows))]
 const CAT_VALUE_NAME: &str = "serial character device";
 
-const CAT_PORT_DEVICE: &'static str = "cat-port-device";
-const AUDIO_OUT_DEVICE: &'static str = "audio-out-device";
-const RIG_IN_DEVICE: &'static str = "rig-in-device";
+const CAT_PORT_DEVICE: &str = "cat-port-device";
+const AUDIO_OUT_DEVICE: &str = "audio-out-device";
+const RIG_IN_DEVICE: &str = "rig-in-device";
 
 arg_enum! {
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -96,7 +96,7 @@ fn parse_command_line<'a>() -> (ArgMatches<'a>, Mode) {
 
     let mode = value_t!(result.value_of("mode"), Mode).unwrap_or(Mode::GUI);
 
-    return (result, mode);
+    (result, mode)
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -114,9 +114,8 @@ pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
             SerialPortType::UsbPort(usb) => {
                 if usb.product == Some("QDX Transceiver".to_string()) {
                     let found = return_p.clone();
-                    let returned = return_p.clone();
                     info!("Found QDX Transceiver as {:?}", found);
-                    return Ok(returned);
+                    return Ok(return_p);
                 }
             }
             SerialPortType::PciPort => {}
@@ -124,7 +123,7 @@ pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
             SerialPortType::Unknown => {}
         }
     }
-    Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find QDX USB serial device")))
+    Err(Box::<dyn Error + Send + Sync>::from("Can't find QDX USB serial device"))
 }
 
 
@@ -290,19 +289,19 @@ pub fn get_qdx_input_device(pa: &PortAudio) -> Result<(InputStreamSettings<f32>,
         let in_channels = info.max_input_channels;
         let input_params = pa::StreamParameters::<f32>::new(idx, in_channels, INTERLEAVED, LATENCY);
         let in_48k_supported = pa.is_input_format_supported(input_params, SAMPLE_RATE).is_ok();
-        let is_qdx_input = in_channels == 2 && in_48k_supported && info.name.find("QDX").is_some();
+        let is_qdx_input = in_channels == 2 && in_48k_supported && info.name.contains("QDX");
         if is_qdx_input {
             info!("Using {:?} as QDX input device", info);
             let settings = InputStreamSettings::new(input_params, SAMPLE_RATE, FRAMES_PER_BUFFER);
             return Ok((settings, input_params));
         }
     }
-    Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find QDX input device")))
+    Err(Box::<dyn Error + Send + Sync>::from("Can't find QDX input device"))
 }
 
 pub fn is_speaker_name(x: &str) -> bool {
-    return x.eq_ignore_ascii_case("built-in output") || x.eq_ignore_ascii_case("macbook pro speakers") ||
-        x.eq_ignore_ascii_case("speakers (realtek high definition audio");
+    x.eq_ignore_ascii_case("built-in output") || x.eq_ignore_ascii_case("macbook pro speakers") ||
+        x.eq_ignore_ascii_case("speakers (realtek high definition audio")
     // a poor heuristic since there are several "realtek" devices, and the second one in the list
     // works - need to assess the DeviceInfo better on windows
 }
@@ -321,7 +320,7 @@ pub fn get_speaker_output_device(pa: &PortAudio) -> Result<(OutputStreamSettings
             return Ok((settings, output_params));
         }
     }
-    Err(Box::<dyn Error + Send + Sync>::from(format!("Can't find speaker output device")))
+    Err(Box::<dyn Error + Send + Sync>::from("Can't find speaker output device"))
 }
 
 pub const BUFFER_SIZE: usize = 128; // determined by watching what portaudio gives the callbacks.
@@ -329,6 +328,7 @@ pub const BUFFER_SIZE: usize = 128; // determined by watching what portaudio giv
 #[derive(Clone)]
 pub struct CallbackData {
     amplitude: f32,
+    avg_waveform_amplitude: f32,
 }
 
 struct Receiver {
@@ -338,12 +338,16 @@ struct Receiver {
     cat: Arc<Mutex<Cat>>,
 }
 
+// TODO replace this with obtaining the audio gain from the QDX, and setting it directly.
 const AMPLITUDE_GAIN: f32 = 20.0;
+// Thanks to MBo: https://stackoverflow.com/questions/55016337/calculate-or-update-average-without-iteration-over-time
+const ALPHA: f32 = 0.1; 
 
 impl Receiver {
     pub fn new(cat: Arc<Mutex<Cat>>) -> Self {
         let callback_data = CallbackData {
             amplitude: 0.0,
+            avg_waveform_amplitude: 0.0,
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
@@ -373,14 +377,19 @@ impl Receiver {
             let amplitude = callback_data.amplitude * AMPLITUDE_GAIN;
             drop(callback_data);
 
+            let mut avg_waveform_amplitude = 0.0;
             for idx in 0..frames * 2 {
                 // TODO MONO - if opening the stream with a single channel causes the same values to
                 // be written to both left and right outputs, this could be optimised..
-                // callback_data.phase += callback_data.delta_phase;
-                // let sine_val = f32::sin(callback_data.phase) * callback_data.amplitude;
 
                 out_buffer[idx] = in_buffer[idx] * amplitude; // why a scaling factor? why is input so quiet? don't know!
+                avg_waveform_amplitude += in_buffer[idx];
             }
+
+            avg_waveform_amplitude /= 128.0;
+            let mut callback_data = move_clone_callback_data.write().unwrap();
+            // Exponentially moving average
+            callback_data.avg_waveform_amplitude = callback_data.avg_waveform_amplitude * (1.0-ALPHA) + avg_waveform_amplitude * ALPHA;
 
             pa::Continue
         };
@@ -891,7 +900,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
     let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
 
-    let receiver = Arc::new(Mutex::new(Receiver::new(arc_mutex_cat.clone())));
+    let receiver = Arc::new(Mutex::new(Receiver::new(arc_mutex_cat)));
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
 
     let mut gui = Gui::new(receiver_gui_output, gui_terminate, frequency, amplitude);
@@ -922,11 +931,11 @@ fn main() {
         app = Some(app::App::default().with_scheme(Scheme::Gleam));
     }
 
-    match run(arguments, mode.clone(), app) {
+    match run(arguments, mode, app) {
         Err(err) => {
             match mode {
                 Mode::GUI => {
-                    fltk::dialog::message_default(&*format!("{}", err));
+                    fltk::dialog::message_default(&format!("{}", err));
                 }
                 _ => {
                     error!("{}", err);
