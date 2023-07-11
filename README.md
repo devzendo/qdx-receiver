@@ -31,7 +31,6 @@ Project started 9 Jul 2023, currently very rough, not fully working.
 My priorities:
 * GUI unfinished.
 * Some audio artifacts.
-* No CAT control yet - no tuning.
 * No configuration yet (to store the last tuned frequency on each band; the last used frequency; the amplitude).
 Needed before a proper release:
 * No packaging/release system yet. Build it yourself from source.
@@ -39,6 +38,9 @@ Needed before a proper release:
 * Developed and tested best on macOS Catalina. Should build on Linux and Windows.
 Nice to have:
 * Make the GUI "beautiful".
+
+## Use
+TBC...
 
 ## Building
 There's no download yet, so to try it you'll need the Rust toolchain. See https://rustup.rs for how to obtain it.
