@@ -359,10 +359,6 @@ impl Receiver {
         }
     }
 
-    pub fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
-        self.gui_input = Some(gui_input);
-    }
-
     // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
     // returning the callback to the caller to do stuff with... is because I can't work out what
     // the correct type signature of a callback-returning function should be.
@@ -410,6 +406,12 @@ impl Receiver {
     }
 }
 
+impl GUIInput for Receiver {
+    fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
+        self.gui_input = Some(gui_input);
+    }
+}
+
 impl GUIOutput for Receiver {
     fn set_frequency(&mut self, frequency_hz: u32) {
         self.cat.lock().unwrap().set_frequency(frequency_hz).unwrap();
@@ -431,11 +433,16 @@ impl Drop for Receiver {
 // GRAPHICAL USER INTERFACE
 // -------------------------------------------------------------------------------------------------
 
-// The rest of the system can effect changes in parts of the GUI by sending messages of this type
+// The Receiver can effect changes in parts of the GUI by sending messages of this type
 // to the GUIInput channel (sender), obtained from the GUI.
 #[derive(Clone, PartialEq, Copy)]
 pub enum GUIInputMessage {
     SignalStrength(f32)
+}
+
+// The Receiver can connect to the GUI by implementing this, and sending these messages.
+pub trait GUIInput {
+    fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>);
 }
 
 // Internal GUI messaging
@@ -689,6 +696,11 @@ impl Gui {
 
             set_draw_color(Color::Black);
             draw_rect(wid.x(), wid.y(), wid.width(), wid.height());
+
+
+            let a: f64 = 30.0;
+            let b: f64 = 150.0;
+            draw_arc(wid.x() + WIDGET_PADDING, wid.y() + WIDGET_PADDING, wid.width() - (2 * WIDGET_PADDING), (wid.height() / 3) * 2, a, b);
             pop_clip();
         });
 
@@ -856,6 +868,36 @@ impl Gui {
 }
 
 // -------------------------------------------------------------------------------------------------
+// FAKE RECEIVER for testing when QDX is not connected
+// -------------------------------------------------------------------------------------------------
+
+struct FakeReceiver {
+    gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
+}
+
+impl FakeReceiver {
+    pub fn new() -> Self {
+        Self {
+            gui_input: None
+        }
+    }
+}
+
+impl GUIInput for FakeReceiver {
+    fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
+        self.gui_input = Some(gui_input);
+    }
+}
+
+impl GUIOutput for FakeReceiver {
+    fn set_frequency(&mut self, _frequency_hz: u32) {
+    }
+
+    fn set_amplitude(&mut self, _amplitude: f32) {
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
 // MAIN
 // -------------------------------------------------------------------------------------------------
 
@@ -884,31 +926,44 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     let terminate = Arc::new(AtomicBool::new(false));
     let gui_terminate = terminate.clone();
 
-    info!("Initialising serial input device...");
-    let serial_port = find_qdx_serial_port()?;
-    let cat = Cat::new(serial_port.port_name)?;
-    let arc_mutex_cat = Arc::new(Mutex::new(cat));
+    let frequency: u32;
+    let receiver_gui_output: Arc<Mutex<dyn GUIOutput>>;
+    let receiver_gui_input: Arc<Mutex<dyn GUIInput>>;
 
-    let frequency: u32 = arc_mutex_cat.lock().unwrap().get_frequency()?;
-    info!("QDX on frequency at {:?}", frequency);
+    let using_fake_receiver = false;
+    if using_fake_receiver {
+        frequency = 14074000;
+        let receiver = Arc::new(Mutex::new(FakeReceiver::new()));
+        receiver_gui_output = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
+        receiver_gui_input = receiver.clone() as Arc<Mutex<dyn GUIInput>>;
+    } else {
+        info!("Initialising serial input device...");
+        let serial_port = find_qdx_serial_port()?;
+        let cat = Cat::new(serial_port.port_name)?;
+        let arc_mutex_cat = Arc::new(Mutex::new(cat));
 
-    info!("Initialising QDX input device...");
-    let (_qdx_input, qdx_params) = get_qdx_input_device(&pa)?;
-    info!("Initialising speaker output device...");
-    let (_speaker_output, speaker_params) = get_speaker_output_device(&pa)?;
+        frequency = arc_mutex_cat.lock().unwrap().get_frequency()?;
+        info!("QDX on frequency at {:?}", frequency);
 
-    pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
-    let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
+        info!("Initialising QDX input device...");
+        let (_qdx_input, qdx_params) = get_qdx_input_device(&pa)?;
+        info!("Initialising speaker output device...");
+        let (_speaker_output, speaker_params) = get_speaker_output_device(&pa)?;
 
-    let receiver = Arc::new(Mutex::new(Receiver::new(arc_mutex_cat)));
-    let receiver_gui_output: Arc<Mutex<dyn GUIOutput>> = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
+        pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
+        let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
+
+        let receiver = Arc::new(Mutex::new(Receiver::new(arc_mutex_cat)));
+        receiver_gui_output = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
+        receiver_gui_input = receiver.clone() as Arc<Mutex<dyn GUIInput>>;
+
+        info!("Starting duplex callback...");
+        receiver.lock().unwrap().start_duplex_callback(&pa, duplex_settings)?;
+    }
 
     let mut gui = Gui::new(receiver_gui_output, gui_terminate, frequency, amplitude);
     let gui_input = gui.gui_input_sender();
-    receiver.lock().unwrap().set_gui_input(gui_input);
-
-    info!("Starting duplex callback...");
-    receiver.lock().unwrap().start_duplex_callback(&pa, duplex_settings)?;
+    receiver_gui_input.lock().unwrap().set_gui_input(gui_input);
 
     info!("Start of app wait loop");
     while app.unwrap().wait() {
