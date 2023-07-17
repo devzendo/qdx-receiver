@@ -449,6 +449,7 @@ pub trait GUIInput {
 #[derive(Clone, Debug)]
 pub enum Message {
     SetAmplitude(f32),
+    SignalStrength(f32),
     IncrementFrequencyDigit(u32),
     DecrementFrequencyDigit(u32),
     SetBandMetres(u8),
@@ -522,6 +523,7 @@ struct Gui {
     volume_slider: ValueSlider,
     muted: bool,
     mute_button: Button,
+    signal_strength: Arc<Mutex<f32>>,
 }
 
 impl Gui {
@@ -556,6 +558,8 @@ impl Gui {
         let band_button_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING;
         let volume_row_y = WIDGET_PADDING + METER_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + DIGIT_HEIGHT + WIDGET_PADDING + DIGIT_BUTTON_DIM + WIDGET_PADDING + BAND_BUTTON_DIM + WIDGET_PADDING;
 
+        let arc_mutex_signal_strength = Arc::new(Mutex::new(0.0));
+        let meter_arc_mutex_signal_strength = arc_mutex_signal_strength.clone();
         let mut gui = Gui {
             gui_input_tx: Arc::new(gui_input_tx),
             gui_output,
@@ -687,6 +691,7 @@ impl Gui {
                 .with_size(MUTE_BUTTON_DIM, MUTE_BUTTON_DIM)
                 .with_pos(WIDGET_PADDING + METER_WIDTH - MUTE_BUTTON_DIM, volume_row_y)
                 .with_label("🔇"),
+            signal_strength: arc_mutex_signal_strength,
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -702,7 +707,7 @@ impl Gui {
             let b: f64 = 150.0;
             draw_arc(wid.x() + WIDGET_PADDING, wid.y() + WIDGET_PADDING, wid.width() - (2 * WIDGET_PADDING), (wid.height() / 3) * 2, a, b);
             pop_clip();
-
+            info!("Updating meter to {}", meter_arc_mutex_signal_strength.lock().unwrap());
             set_line_style(LineStyle::Solid, 0); // reset it, or everything is thick
         });
 
@@ -758,7 +763,7 @@ impl Gui {
         wind.set_color(window_background);
 
         // Functions called on the GUI by the rest of the system...
-        let _thread_gui_sender = gui.sender.clone();
+        let thread_gui_sender = gui.sender.clone();
         let thread_handle = thread::spawn(move || {
             loop {
                 if thread_terminate.load(Ordering::SeqCst) {
@@ -770,7 +775,7 @@ impl Gui {
                     match gui_input_message {
                         GUIInputMessage::SignalStrength(amplitude) => {
                             info!("Signal strength is {:1.3}", amplitude);
-                            // thread_gui_sender.send(Message::SetAmplitude(amplitude));
+                            thread_gui_sender.send(Message::SignalStrength(amplitude));
                         }
                     }
                 }
@@ -858,6 +863,10 @@ impl Gui {
                         }
                         self.muted = !self.muted;
                     }
+                    Message::SignalStrength(strength) => {
+                        *self.signal_strength.lock().unwrap() = strength;
+                        self.meter_canvas.redraw();
+                    }
                 }
             }
         }
@@ -890,7 +899,7 @@ impl FakeReceiver {
                     info!("Terminating FakeReceiver thread");
                     break;
                 }
-                thread::sleep(Duration::from_millis(150));
+                thread::sleep(Duration::from_millis(250));
                 let sender = thread_gui_input_holder.lock().unwrap();
                 match sender.as_deref() {
                     None => {
