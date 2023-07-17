@@ -8,7 +8,7 @@ extern crate clap;
 extern crate portaudio;
 
 use std::error::Error;
-use std::sync::{Arc, mpsc, Mutex, RwLock};
+use std::sync::{Arc, mpsc, Mutex, MutexGuard, RwLock};
 use std::{env, thread};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -696,12 +696,14 @@ impl Gui {
 
             set_draw_color(Color::Black);
             draw_rect(wid.x(), wid.y(), wid.width(), wid.height());
-
+            set_line_style(LineStyle::Solid, 5); // Must be done after setting colour (for Windows)
 
             let a: f64 = 30.0;
             let b: f64 = 150.0;
             draw_arc(wid.x() + WIDGET_PADDING, wid.y() + WIDGET_PADDING, wid.width() - (2 * WIDGET_PADDING), (wid.height() / 3) * 2, a, b);
             pop_clip();
+
+            set_line_style(LineStyle::Solid, 0); // reset it, or everything is thick
         });
 
         gui.frequency_output.set_color(window_background);
@@ -767,7 +769,7 @@ impl Gui {
                 if let Ok(gui_input_message) = gui_input_rx.recv_timeout(Duration::from_millis(250)) {
                     match gui_input_message {
                         GUIInputMessage::SignalStrength(amplitude) => {
-                            info!("Signal strength is {}", amplitude);
+                            info!("Signal strength is {:1.3}", amplitude);
                             // thread_gui_sender.send(Message::SetAmplitude(amplitude));
                         }
                     }
@@ -872,20 +874,52 @@ impl Gui {
 // -------------------------------------------------------------------------------------------------
 
 struct FakeReceiver {
-    gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
+    gui_input: Arc<Mutex<Option<Arc<SyncSender<GUIInputMessage>>>>>,
+    read_thread_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl FakeReceiver {
-    pub fn new() -> Self {
+    pub fn new(terminate: Arc<AtomicBool>) -> Self {
+        let gui_input_holder: Arc<Mutex<Option<Arc<SyncSender<GUIInputMessage>>>>> = Arc::new(Mutex::new(None));
+        let thread_gui_input_holder = gui_input_holder.clone();
+        let read_thread_handle = thread::spawn(move || {
+            let mut strength: f32 = 0.0;
+            let mut strength_sign = 1.0;
+            loop {
+                if terminate.load(Ordering::SeqCst) {
+                    info!("Terminating FakeReceiver thread");
+                    break;
+                }
+                thread::sleep(Duration::from_millis(150));
+                let sender = thread_gui_input_holder.lock().unwrap();
+                match sender.as_deref() {
+                    None => {
+                    }
+                    Some(gui_input) => {
+                        gui_input.send(GUIInputMessage::SignalStrength(strength));
+                        strength += 0.05 * strength_sign;
+                        if strength < 0.0 {
+                            strength = 0.0;
+                            strength_sign = 1.0;
+                        } else if strength > 1.0 {
+                            strength = 1.0;
+                            strength_sign = -1.0;
+                        }
+                    }
+                }
+            }
+        });
+
         Self {
-            gui_input: None
+            gui_input: gui_input_holder,
+            read_thread_handle: Mutex::new(Some(read_thread_handle)),
         }
     }
 }
 
 impl GUIInput for FakeReceiver {
     fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
-        self.gui_input = Some(gui_input);
+        *self.gui_input.lock().unwrap() = Some(gui_input);
     }
 }
 
@@ -894,6 +928,15 @@ impl GUIOutput for FakeReceiver {
     }
 
     fn set_amplitude(&mut self, _amplitude: f32) {
+    }
+}
+
+impl Drop for FakeReceiver {
+    fn drop(&mut self) {
+        debug!("FakeReceiver joining thread handle...");
+        let mut read_thread_handle = self.read_thread_handle.lock().unwrap();
+        read_thread_handle.take().map(JoinHandle::join);
+        debug!("...FakeReceiver joined thread handle");
     }
 }
 
@@ -930,10 +973,11 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>>;
     let receiver_gui_input: Arc<Mutex<dyn GUIInput>>;
 
-    let using_fake_receiver = false;
+    let using_fake_receiver = true;
     if using_fake_receiver {
         frequency = 14074000;
-        let receiver = Arc::new(Mutex::new(FakeReceiver::new()));
+        let fake_receiver_terminate = terminate.clone();
+        let receiver = Arc::new(Mutex::new(FakeReceiver::new(fake_receiver_terminate)));
         receiver_gui_output = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
         receiver_gui_input = receiver.clone() as Arc<Mutex<dyn GUIInput>>;
     } else {
@@ -970,7 +1014,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
         gui.message_handle();
     }
     info!("End of app wait loop");
-
+    terminate.store(true, Ordering::SeqCst);
     info!("Exiting");
     Ok(0)
 }
