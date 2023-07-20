@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod cat;
 pub mod fakereceiver;
 pub mod gui;
