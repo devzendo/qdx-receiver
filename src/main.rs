@@ -8,26 +8,24 @@ extern crate clap;
 extern crate portaudio;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::env;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::SyncSender;
-use std::time::Duration;
 
 use clap::{App, Arg, ArgMatches};
 use clap::arg_enum;
 use fltk::app;
 use fltk::app::Scheme;
-use log::{debug, error, info, warn};
-use portaudio::{Duplex, DuplexStreamSettings, InputStreamSettings, NonBlocking, OutputStreamSettings, PortAudio, Stream};
+use log::{debug, error, info};
+use portaudio::{DuplexStreamSettings, InputStreamSettings, OutputStreamSettings, PortAudio};
 use portaudio as pa;
 use portaudio::stream::Parameters;
-use regex::Regex;
-use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortSettings, SerialPortType, StopBits};
+use serialport::{SerialPortInfo, SerialPortType};
+use qdx_receiver::libs::cat::cat::Cat;
 use qdx_receiver::libs::fakereceiver::fakereceiver::FakeReceiver;
 use qdx_receiver::libs::gui::gui::Gui;
-use qdx_receiver::libs::gui_api::gui_api::{GUIInput, GUIInputMessage, GUIOutput};
+use qdx_receiver::libs::gui_api::gui_api::{GUIInput, GUIOutput};
+use qdx_receiver::libs::receiver::receiver::Receiver;
 
 // -------------------------------------------------------------------------------------------------
 // COMMAND LINE HANDLING AND LOGGING
@@ -125,129 +123,6 @@ pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
 
 
 // -------------------------------------------------------------------------------------------------
-// CAT - COMPUTER AIDED TRANSCEIVER
-// -------------------------------------------------------------------------------------------------
-
-struct Cat {
-    serial_port: Box<dyn SerialPort>,
-}
-
-impl Cat {
-    pub fn new(port_name: String) -> Result<Cat, Box<dyn Error>> {
-        info!("Opening serial port {}", port_name);
-        let settings = SerialPortSettings {
-            baud_rate: 38400, // it's irrelevant over USB
-            data_bits: DataBits::Eight,
-            flow_control: FlowControl::Hardware,
-            parity: Parity::None,
-            stop_bits: StopBits::One,
-            timeout: Duration::from_millis(250)
-        };
-        return match serialport::open_with_settings(&port_name, &settings) {
-            Ok(serial_port) => {
-                info!("Port open");
-                let cat = Self {
-                    serial_port,
-                };
-                Ok(cat)
-            }
-            Err(e) => {
-                Err(Box::<dyn Error + Send + Sync>::from(format!("Failed to open serial port {}: {}", port_name, e)))
-            }
-        };
-    }
-
-    // Synchronous.. Expects request to be a valid ;-terminated CAT command; an Ok response contains
-    // a valid ;-terminated CAT response.
-    fn transact(&mut self, request: &str) -> Result<String, Box<dyn Error>> {
-        self.send_request(request)?;
-        self.receive_response(request)
-    }
-
-    fn send_request(&mut self, request: &str) -> Result<(), Box<dyn Error>> {
-        let request_bytes = request.as_bytes();
-        if request.len() < 3 {
-            return Err(Box::<dyn Error + Send + Sync>::from(format!("A CAT request must be at least 3 characters long, this is {}", request_bytes.len())));
-        }
-        debug!("Sending CAT request '{}'", request);
-        let result = self.serial_port.write(request_bytes)?;
-        if result != request_bytes.len() {
-            return Err(Box::<dyn Error + Send + Sync>::from(format!("Expected to write {} bytes to QDX; wrote {}", request_bytes.len(), result)));
-        }
-        Ok(())
-    }
-
-    // Precondition: send_request has been used to validate and send the request.
-    fn receive_response(&mut self, request: &str) -> Result<String, Box<dyn Error>> {
-        let request_bytes = request.as_bytes();
-
-        let mut received: Vec<u8> = vec![];
-        loop {
-            let mut byte = [0u8; 1];
-            match self.serial_port.read(&mut byte) {
-                Ok(n) => {
-                    assert!(n == 1);
-                    debug!("Received CAT response byte '{}'", byte[0]);
-                    received.push(byte[0]);
-                    if byte[0] == b';' {
-                        debug!("Received end of CAT response");
-                        break;
-                    }
-                }
-                Err(err) => {
-                    return Err(Box::<dyn Error + Send + Sync>::from(format!("No response from QDX: {}", err)));
-                }
-            }
-        }
-        match std::str::from_utf8(received.as_slice()) {
-            Ok(response) => {
-                if response.len() < 2 {
-                    Err(Box::<dyn Error + Send + Sync>::from(format!("QDX response was too short: '{}'", response)))
-                } else {
-                    let response_bytes = response.as_bytes();
-                    if response_bytes[0] != request_bytes[0] && response_bytes[1] != request_bytes[1] {
-                        Err(Box::<dyn Error + Send + Sync>::from(format!("QDX response did not match request: '{}'", response)))
-                    } else {
-                        let response_string = response.to_string();
-                        debug!("Received CAT response '{}'", response_string);
-                        Ok(response_string)
-                    }
-                }
-            }
-            Err(err) => {
-                Err(Box::<dyn Error + Send + Sync>::from(format!("Could not convert QDX response to String: {}", err)))
-            }
-        }
-    }
-
-    pub fn get_frequency(&mut self) -> Result<u32, Box<dyn Error>> {
-        let fa_response = self.transact("FA;")?;
-        let fa_response_regex = Regex::new(r"FA(\d{11});").unwrap();
-        match fa_response_regex.captures(fa_response.as_str()) {
-            Some(captures) => {
-                let freq_string = captures.get(1).unwrap().as_str();
-                let freq = str::parse::<u32>(freq_string)?;
-                debug!("get_frequency returning {}", freq);
-                Ok(freq)
-            },
-            None => Err(Box::<dyn Error + Send + Sync>::from(format!("Unexpected 'frequency' response: '{}'", fa_response)))
-        }
-    }
-
-    pub fn set_frequency(&mut self, frequency_hz: u32) -> Result<(), Box<dyn Error>> {
-        self.send_request(format!("FA{};", frequency_hz).as_str())?;
-        Ok(())
-    }
-}
-
-impl Drop for Cat {
-    fn drop(&mut self) {
-        info!("Flushing serial port");
-        self.serial_port.flush().expect("Could not flush");
-    }
-}
-
-// -------------------------------------------------------------------------------------------------
 // AUDIO INTERFACING
 // -------------------------------------------------------------------------------------------------
 
@@ -322,110 +197,6 @@ pub fn get_speaker_output_device(pa: &PortAudio) -> Result<(OutputStreamSettings
 
 pub const BUFFER_SIZE: usize = 128; // determined by watching what portaudio gives the callbacks.
 
-#[derive(Clone)]
-pub struct CallbackData {
-    amplitude: f32,
-    avg_waveform_amplitude: f32,
-}
-
-struct Receiver {
-    duplex_stream: Option<Stream<NonBlocking, Duplex<f32, f32>>>,
-    callback_data: Arc<RwLock<CallbackData>>,
-    gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
-    cat: Arc<Mutex<Cat>>,
-}
-
-// TODO replace this with obtaining the audio gain from the QDX, and setting it directly.
-const AMPLITUDE_GAIN: f32 = 20.0;
-// Thanks to MBo: https://stackoverflow.com/questions/55016337/calculate-or-update-average-without-iteration-over-time
-const ALPHA: f32 = 0.1; 
-
-impl Receiver {
-    pub fn new(cat: Arc<Mutex<Cat>>) -> Self {
-        let callback_data = CallbackData {
-            amplitude: 0.0,
-            avg_waveform_amplitude: 0.0,
-        };
-
-        let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
-        // TODO create a thread that periodically sends the avg_waveform_amplitude to the gui_input.
-        Self {
-            duplex_stream: None,
-            callback_data: arc_lock_callback_data,
-            gui_input: None,
-            cat,
-        }
-    }
-
-    // The odd form of this callback setup (pass in the PortAudio and settings) rather than just
-    // returning the callback to the caller to do stuff with... is because I can't work out what
-    // the correct type signature of a callback-returning function should be.
-    pub fn start_duplex_callback(&mut self, pa: &PortAudio, duplex_settings: DuplexStreamSettings<f32, f32>) -> Result<(), Box<dyn Error>> {
-
-        let move_clone_callback_data = self.callback_data.clone();
-
-        let callback = move |pa::DuplexStreamCallbackArgs::<f32, f32> { in_buffer, out_buffer, frames, .. }| {
-            //info!("input buffer length is {}, output buffer length is {}, frames is {}", in_buffer.len(), out_buffer.len(), frames);
-            // input buffer length is 128, output buffer length is 128, frames is 64
-            let callback_data = move_clone_callback_data.read().unwrap();
-            let amplitude = callback_data.amplitude * AMPLITUDE_GAIN;
-            drop(callback_data);
-
-            let mut avg_waveform_amplitude = 0.0;
-            for idx in 0..frames * 2 {
-                // TODO MONO - if opening the stream with a single channel causes the same values to
-                // be written to both left and right outputs, this could be optimised..
-
-                out_buffer[idx] = in_buffer[idx] * amplitude; // why a scaling factor? why is input so quiet? don't know!
-                avg_waveform_amplitude += in_buffer[idx];
-            }
-
-            avg_waveform_amplitude /= 128.0;
-            let mut callback_data = move_clone_callback_data.write().unwrap();
-            // Exponentially moving average
-            callback_data.avg_waveform_amplitude = callback_data.avg_waveform_amplitude * (1.0-ALPHA) + avg_waveform_amplitude * ALPHA;
-
-            pa::Continue
-        };
-
-        let maybe_stream = pa.open_non_blocking_stream(duplex_settings, callback);
-        match maybe_stream {
-            Ok(mut stream) => {
-                info!("Starting duplex stream");
-                stream.start()?;
-                self.duplex_stream = Some(stream);
-            }
-            Err(e) => {
-                warn!("Error opening duplex stream: {}", e);
-            }
-        }
-        Ok(())
-        // Now it's playing...
-    }
-}
-
-impl GUIInput for Receiver {
-    fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
-        self.gui_input = Some(gui_input);
-    }
-}
-
-impl GUIOutput for Receiver {
-    fn set_frequency(&mut self, frequency_hz: u32) {
-        self.cat.lock().unwrap().set_frequency(frequency_hz).unwrap();
-    }
-
-    fn set_amplitude(&mut self, amplitude: f32) {
-        let mut callback_data = self.callback_data.write().unwrap();
-        callback_data.amplitude = amplitude;
-    }
-}
-
-impl Drop for Receiver {
-    fn drop(&mut self) {
-        info!("Stopping duplex stream: {:?}", self.duplex_stream.as_mut().unwrap().stop());
-    }
-}
 
 // -------------------------------------------------------------------------------------------------
 // MAIN
