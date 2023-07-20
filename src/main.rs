@@ -31,6 +31,8 @@ use portaudio as pa;
 use portaudio::stream::Parameters;
 use regex::Regex;
 use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortSettings, SerialPortType, StopBits};
+use qdx_receiver::libs::fakereceiver::fakereceiver::FakeReceiver;
+use qdx_receiver::libs::gui_api::gui_api::{GUIInput, GUIInputMessage, GUIOutput, Message};
 
 // -------------------------------------------------------------------------------------------------
 // COMMAND LINE HANDLING AND LOGGING
@@ -433,37 +435,6 @@ impl Drop for Receiver {
 // -------------------------------------------------------------------------------------------------
 // GRAPHICAL USER INTERFACE
 // -------------------------------------------------------------------------------------------------
-
-// The Receiver can effect changes in parts of the GUI by sending messages of this type
-// to the GUIInput channel (sender), obtained from the GUI.
-#[derive(Clone, PartialEq, Copy)]
-pub enum GUIInputMessage {
-    SignalStrength(f32)
-}
-
-// The Receiver can connect to the GUI by implementing this, and sending these messages.
-pub trait GUIInput {
-    fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>);
-}
-
-// Internal GUI messaging
-#[derive(Clone, Debug)]
-pub enum Message {
-    SetAmplitude(f32),
-    SignalStrength(f32),
-    IncrementFrequencyDigit(u32),
-    DecrementFrequencyDigit(u32),
-    SetBandMetres(u8),
-    ToggleMute,
-}
-
-// The GUI controls can effect changes in the rest of the system via this facade...
-// ... which is implemented by the Receiver.
-pub trait GUIOutput {
-    fn set_frequency(&mut self, frequency_hz: u32);
-    fn set_amplitude(&mut self, amplitude: f32); // 0.0 -> 1.0
-}
-
 
 pub const WIDGET_PADDING: i32 = 10;
 
@@ -899,77 +870,6 @@ impl Gui {
     // Use this to send update messages to the GUI.
     pub fn gui_input_sender(&self) -> Arc<mpsc::SyncSender<GUIInputMessage>> {
         self.gui_input_tx.clone()
-    }
-}
-
-// -------------------------------------------------------------------------------------------------
-// FAKE RECEIVER for testing when QDX is not connected
-// -------------------------------------------------------------------------------------------------
-
-struct FakeReceiver {
-    gui_input: Arc<Mutex<Option<Arc<SyncSender<GUIInputMessage>>>>>,
-    read_thread_handle: Mutex<Option<JoinHandle<()>>>,
-}
-
-impl FakeReceiver {
-    pub fn new(terminate: Arc<AtomicBool>) -> Self {
-        let gui_input_holder: Arc<Mutex<Option<Arc<SyncSender<GUIInputMessage>>>>> = Arc::new(Mutex::new(None));
-        let thread_gui_input_holder = gui_input_holder.clone();
-        let read_thread_handle = thread::spawn(move || {
-            let mut strength: f32 = 0.0;
-            let mut strength_sign = 1.0;
-            loop {
-                if terminate.load(Ordering::SeqCst) {
-                    info!("Terminating FakeReceiver thread");
-                    break;
-                }
-                thread::sleep(Duration::from_millis(250));
-                let sender = thread_gui_input_holder.lock().unwrap();
-                match sender.as_deref() {
-                    None => {
-                    }
-                    Some(gui_input) => {
-                        gui_input.send(GUIInputMessage::SignalStrength(strength)).unwrap();
-                        strength += 0.05 * strength_sign;
-                        if strength < 0.0 {
-                            strength = 0.0;
-                            strength_sign = 1.0;
-                        } else if strength > 1.0 {
-                            strength = 1.0;
-                            strength_sign = -1.0;
-                        }
-                    }
-                }
-            }
-        });
-
-        Self {
-            gui_input: gui_input_holder,
-            read_thread_handle: Mutex::new(Some(read_thread_handle)),
-        }
-    }
-}
-
-impl GUIInput for FakeReceiver {
-    fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
-        *self.gui_input.lock().unwrap() = Some(gui_input);
-    }
-}
-
-impl GUIOutput for FakeReceiver {
-    fn set_frequency(&mut self, _frequency_hz: u32) {
-    }
-
-    fn set_amplitude(&mut self, _amplitude: f32) {
-    }
-}
-
-impl Drop for FakeReceiver {
-    fn drop(&mut self) {
-        debug!("FakeReceiver joining thread handle...");
-        let mut read_thread_handle = self.read_thread_handle.lock().unwrap();
-        read_thread_handle.take().map(JoinHandle::join);
-        debug!("...FakeReceiver joined thread handle");
     }
 }
 
