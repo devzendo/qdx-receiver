@@ -93,11 +93,6 @@ fn parse_command_line<'a>() -> (ArgMatches<'a>, Mode) {
     (result, mode)
 }
 
-
-
-pub const BUFFER_SIZE: usize = 128; // determined by watching what portaudio gives the callbacks.
-
-
 // -------------------------------------------------------------------------------------------------
 // MAIN
 // -------------------------------------------------------------------------------------------------
