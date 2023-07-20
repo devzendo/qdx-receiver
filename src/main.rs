@@ -20,12 +20,12 @@ use log::{debug, error, info};
 use portaudio::{DuplexStreamSettings, InputStreamSettings, OutputStreamSettings, PortAudio};
 use portaudio as pa;
 use portaudio::stream::Parameters;
-use serialport::{SerialPortInfo, SerialPortType};
 use qdx_receiver::libs::cat::cat::Cat;
 use qdx_receiver::libs::fakereceiver::fakereceiver::FakeReceiver;
 use qdx_receiver::libs::gui::gui::Gui;
 use qdx_receiver::libs::gui_api::gui_api::{GUIInput, GUIOutput};
 use qdx_receiver::libs::receiver::receiver::Receiver;
+use qdx_receiver::libs::serial::serial::find_qdx_serial_port;
 
 // -------------------------------------------------------------------------------------------------
 // COMMAND LINE HANDLING AND LOGGING
@@ -92,33 +92,6 @@ fn parse_command_line<'a>() -> (ArgMatches<'a>, Mode) {
     let mode = value_t!(result.value_of("mode"), Mode).unwrap_or(Mode::GUI);
 
     (result, mode)
-}
-
-// -------------------------------------------------------------------------------------------------
-// SERIAL PORT
-// -------------------------------------------------------------------------------------------------
-
-pub fn find_qdx_serial_port() -> Result<SerialPortInfo, Box<dyn Error>> {
-    let ports = serialport::available_ports()?;
-    info!("Scanning serial ports...");
-    for p in ports {
-        debug!("Port {:?}", p);
-        let return_p = p.clone();
-        let match_p = p.clone();
-        match match_p.port_type {
-            SerialPortType::UsbPort(usb) => {
-                if usb.product == Some("QDX Transceiver".to_string()) {
-                    let found = return_p.clone();
-                    info!("Found QDX Transceiver as {:?}", found);
-                    return Ok(return_p);
-                }
-            }
-            SerialPortType::PciPort => {}
-            SerialPortType::BluetoothPort => {}
-            SerialPortType::Unknown => {}
-        }
-    }
-    Err(Box::<dyn Error + Send + Sync>::from("Can't find QDX USB serial device"))
 }
 
 
