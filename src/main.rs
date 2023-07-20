@@ -150,7 +150,8 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
         pa.is_duplex_format_supported(qdx_params, speaker_params, 48000_f64)?;
         let duplex_settings = DuplexStreamSettings::new(qdx_params, speaker_params, 48000_f64, 64);
 
-        let receiver = Arc::new(Mutex::new(Receiver::new(arc_mutex_cat)));
+        let receiver_terminate = terminate.clone();
+        let receiver = Arc::new(Mutex::new(Receiver::new(receiver_terminate, arc_mutex_cat)));
         receiver_gui_output = receiver.clone() as Arc<Mutex<dyn GUIOutput>>;
         receiver_gui_input = receiver.clone() as Arc<Mutex<dyn GUIInput>>;
 

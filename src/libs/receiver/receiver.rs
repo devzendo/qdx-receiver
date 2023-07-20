@@ -4,8 +4,12 @@
 
 use std::error::Error;
 use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
-use log::{info, warn};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use log::{debug, info, warn};
 use portaudio::{Duplex, DuplexStreamSettings, NonBlocking, PortAudio, Stream};
 use portaudio as pa;
 use crate::libs::cat::cat::Cat;
@@ -18,9 +22,10 @@ pub struct CallbackData {
 }
 
 pub struct Receiver {
+    gui_input: Arc<Mutex<Option<Arc<SyncSender<GUIInputMessage>>>>>,
+    read_thread_handle: Mutex<Option<JoinHandle<()>>>,
     duplex_stream: Option<Stream<NonBlocking, Duplex<f32, f32>>>,
     callback_data: Arc<RwLock<CallbackData>>,
-    gui_input: Option<Arc<SyncSender<GUIInputMessage>>>,
     cat: Arc<Mutex<Cat>>,
 }
 
@@ -30,18 +35,44 @@ const AMPLITUDE_GAIN: f32 = 20.0;
 const ALPHA: f32 = 0.1;
 
 impl Receiver {
-    pub fn new(cat: Arc<Mutex<Cat>>) -> Self {
+    pub fn new(terminate: Arc<AtomicBool>, cat: Arc<Mutex<Cat>>) -> Self {
         let callback_data = CallbackData {
             amplitude: 0.0,
             avg_waveform_amplitude: 0.0,
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
-        // TODO create a thread that periodically sends the avg_waveform_amplitude to the gui_input.
+        let gui_input_holder: Arc<Mutex<Option<Arc<SyncSender<GUIInputMessage>>>>> = Arc::new(Mutex::new(None));
+        let thread_gui_input_holder = gui_input_holder.clone();
+
+        // This thread periodically sends the avg_waveform_amplitude to the gui_input.
+        let thread_callback_data = arc_lock_callback_data.clone();
+        let read_thread_handle = thread::spawn(move || {
+            loop {
+                if terminate.load(Ordering::SeqCst) {
+                    info!("Terminating FakeReceiver thread");
+                    break;
+                }
+                thread::sleep(Duration::from_millis(250));
+                let sender = thread_gui_input_holder.lock().unwrap();
+                match sender.as_deref() {
+                    None => {
+                    }
+                    Some(gui_input) => {
+                        let callback_data = thread_callback_data.read().unwrap();
+                        let strength = callback_data.avg_waveform_amplitude;
+                        drop(callback_data);
+
+                        gui_input.send(GUIInputMessage::SignalStrength(strength)).unwrap();
+                    }
+                }
+            }
+        });
         Self {
+            gui_input: gui_input_holder,
+            read_thread_handle: Mutex::new(Some(read_thread_handle)),
             duplex_stream: None,
             callback_data: arc_lock_callback_data,
-            gui_input: None,
             cat,
         }
     }
@@ -95,7 +126,7 @@ impl Receiver {
 
 impl GUIInput for Receiver {
     fn set_gui_input(&mut self, gui_input: Arc<SyncSender<GUIInputMessage>>) {
-        self.gui_input = Some(gui_input);
+        *self.gui_input.lock().unwrap() = Some(gui_input);
     }
 }
 
@@ -113,5 +144,9 @@ impl GUIOutput for Receiver {
 impl Drop for Receiver {
     fn drop(&mut self) {
         info!("Stopping duplex stream: {:?}", self.duplex_stream.as_mut().unwrap().stop());
+        debug!("Receiver joining thread handle...");
+        let mut read_thread_handle = self.read_thread_handle.lock().unwrap();
+        read_thread_handle.take().map(JoinHandle::join);
+        debug!("...FakeReceiver joined thread handle");
     }
 }
