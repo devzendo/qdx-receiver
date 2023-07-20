@@ -8,7 +8,7 @@ extern crate clap;
 extern crate portaudio;
 
 use std::error::Error;
-use std::sync::{Arc, mpsc, Mutex, MutexGuard, RwLock};
+use std::sync::{Arc, mpsc, Mutex, RwLock};
 use std::{env, thread};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -351,6 +351,7 @@ impl Receiver {
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
+        // TODO create a thread that periodically sends the avg_waveform_amplitude to the gui_input.
         Self {
             duplex_stream: None,
             callback_data: arc_lock_callback_data,
@@ -928,7 +929,7 @@ impl FakeReceiver {
                     None => {
                     }
                     Some(gui_input) => {
-                        gui_input.send(GUIInputMessage::SignalStrength(strength));
+                        gui_input.send(GUIInputMessage::SignalStrength(strength)).unwrap();
                         strength += 0.05 * strength_sign;
                         if strength < 0.0 {
                             strength = 0.0;
@@ -1005,7 +1006,7 @@ fn run(_arguments: ArgMatches, mode: Mode, app: Option<fltk::app::App>) -> Resul
     let receiver_gui_output: Arc<Mutex<dyn GUIOutput>>;
     let receiver_gui_input: Arc<Mutex<dyn GUIInput>>;
 
-    let using_fake_receiver = true;
+    let using_fake_receiver = false;
     if using_fake_receiver {
         frequency = 14074000;
         let fake_receiver_terminate = terminate.clone();
