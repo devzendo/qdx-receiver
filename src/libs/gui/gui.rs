@@ -319,7 +319,7 @@ impl Gui {
                 if let Ok(gui_input_message) = gui_input_rx.recv_timeout(Duration::from_millis(250)) {
                     match gui_input_message {
                         GUIInputMessage::SignalStrength(amplitude) => {
-                            info!("Signal strength is {:1.3}", amplitude);
+                            //info!("Signal strength is {:1.3}", amplitude);
                             thread_gui_sender.send(Message::SignalStrength(amplitude));
                         }
                     }
@@ -366,10 +366,11 @@ impl Gui {
         set_line_style(LineStyle::Solid, 5);
         //let mut theta = right_theta;
         //loop {
-        let theta = signal_strength * theta_range + right_theta; // Theta increases from the right
+        let fudged_signal_strength = signal_strength * 10.0; // to make it like my Yaesu :)
+        let theta = fudged_signal_strength * theta_range + right_theta; // Theta increases from the right
         let long_r = 164.0;
         let short_r = 80.0;
-        info!("Updating meter to theta {} signal strength is {}", theta, signal_strength);
+        info!("Updating meter to theta {} signal strength is {}", theta, fudged_signal_strength);
         Self::draw_meter_line(theta, long_r, short_r, mid_x, mid_y);
         //theta += 0.01;
         //if theta >= left_theta {

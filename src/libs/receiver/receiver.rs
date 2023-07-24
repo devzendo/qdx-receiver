@@ -55,7 +55,7 @@ impl Receiver {
                     info!("Terminating FakeReceiver thread");
                     break;
                 }
-                thread::sleep(Duration::from_millis(250));
+                thread::sleep(Duration::from_millis(100));
                 let sender = thread_gui_input_holder.lock().unwrap();
                 match sender.as_deref() {
                     None => {
@@ -63,7 +63,7 @@ impl Receiver {
                     Some(gui_input) => {
                         let callback_data = thread_callback_data.read().unwrap();
                         let strength = callback_data.avg_waveform_amplitude;
-                        info!("min {} max {}", callback_data.min_waveform_amplitude, callback_data.max_waveform_amplitude);
+                        // info!("min {} max {}", callback_data.min_waveform_amplitude, callback_data.max_waveform_amplitude);
                         drop(callback_data);
 
                         let _ = gui_input.send(GUIInputMessage::SignalStrength(strength));
@@ -113,8 +113,8 @@ impl Receiver {
 
             avg_waveform_amplitude /= 128.0; // should be in range [0..1]
             let mut callback_data = move_clone_callback_data.write().unwrap();
-            callback_data.avg_waveform_amplitude -= callback_data.avg_waveform_amplitude / 20.0;
-            callback_data.avg_waveform_amplitude += avg_waveform_amplitude / 20.0;
+            callback_data.avg_waveform_amplitude -= callback_data.avg_waveform_amplitude / 40.0;
+            callback_data.avg_waveform_amplitude += avg_waveform_amplitude / 40.0;
             if min_amp < callback_data.min_waveform_amplitude {
                 callback_data.min_waveform_amplitude = min_amp;
             }
