@@ -22,7 +22,9 @@ pub trait GUIInput {
 pub enum Message {
     SetAmplitude(f32),
     SignalStrength(f32),
+    IncrementFrequencyWheel,
     IncrementFrequencyDigit(u32),
+    DecrementFrequencyWheel,
     DecrementFrequencyDigit(u32),
     SetBandMetres(u8),
     ToggleMute,

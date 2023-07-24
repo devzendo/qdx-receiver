@@ -80,6 +80,7 @@ pub struct Gui {
     muted: bool,
     mute_button: Button,
     signal_strength: Arc<Mutex<f32>>,
+    wheel_digit: Option<u32>,
 }
 
 impl Gui {
@@ -99,9 +100,9 @@ impl Gui {
             if ev == Event::MouseWheel {
                 let dy = app::event_dy();
                 let message = if dy == MouseWheel::Down {
-                    Message::DecrementFrequencyDigit(2)
+                    Message::DecrementFrequencyWheel
                 } else {
-                    Message::IncrementFrequencyDigit(2)
+                    Message::IncrementFrequencyWheel
                 };
                 mouse_wheel_sender_clone.send(message);
             }
@@ -248,6 +249,7 @@ impl Gui {
                 .with_pos(WIDGET_PADDING + METER_WIDTH - MUTE_BUTTON_DIM, volume_row_y)
                 .with_label("🔇"),
             signal_strength: arc_mutex_signal_strength,
+            wheel_digit: None,
         };
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
@@ -385,6 +387,32 @@ impl Gui {
         self.frequency_output.set_value(format!("{:08}",self.frequency).as_str());
     }
 
+    fn increment_digit(&mut self, digit: u32) {
+        debug!("Previous frequency {}", self.frequency);
+        let pow = 10_u32.pow(digit);
+        if self.frequency + pow < 99999999 {
+            self.frequency += pow;
+            info!("New frequency {}", self.frequency);
+            self.gui_output.lock().unwrap().set_frequency(self.frequency);
+            self.show_frequency();
+        } else {
+            error!("Out of range!");
+        }
+    }
+    
+    fn decrement_digit(&mut self, digit: u32) {
+        debug!("Previous frequency {}", self.frequency);
+        let pow = 10_u32.pow(digit);
+        if self.frequency as i64 - pow as i64 >= 0 {
+            self.frequency -= pow;
+            info!("New frequency {}", self.frequency);
+            self.gui_output.lock().unwrap().set_frequency(self.frequency);
+            self.show_frequency();
+        } else {
+            error!("Out of range!");
+        }
+    }
+
     pub fn message_handle(&mut self) {
         match self.receiver.recv() {
             None => {
@@ -398,29 +426,23 @@ impl Gui {
                         self.gui_output.lock().unwrap().set_amplitude(amplitude);
                         self.amplitude = amplitude;
                     }
-                    Message::IncrementFrequencyDigit(digit) => {
-                        debug!("Previous frequency {}", self.frequency);
-                        let pow = 10_u32.pow(digit);
-                        if self.frequency + pow < 99999999 {
-                            self.frequency += pow;
-                            info!("New frequency {}", self.frequency);
-                            self.gui_output.lock().unwrap().set_frequency(self.frequency);
-                            self.show_frequency();
-                        } else {
-                            error!("Out of range!");
+                    Message::IncrementFrequencyWheel => {
+                        if let Some(digit) = self.wheel_digit {
+                            self.increment_digit(digit);
                         }
                     }
-                    Message::DecrementFrequencyDigit(digit) => {
-                        debug!("Previous frequency {}", self.frequency);
-                        let pow = 10_u32.pow(digit);
-                        if self.frequency as i64 - pow as i64 >= 0 {
-                            self.frequency -= pow;
-                            info!("New frequency {}", self.frequency);
-                            self.gui_output.lock().unwrap().set_frequency(self.frequency);
-                            self.show_frequency();
-                        } else {
-                            error!("Out of range!");
+                    Message::DecrementFrequencyWheel => {
+                        if let Some(digit) = self.wheel_digit {
+                            self.decrement_digit(digit);
                         }
+                    }
+                    Message::IncrementFrequencyDigit(digit) => {
+                        self.wheel_digit = Some(digit);
+                        self.increment_digit(digit);
+                    }
+                    Message::DecrementFrequencyDigit(digit) => {
+                        self.wheel_digit = Some(digit);
+                        self.decrement_digit(digit);
                     }
                     Message::SetBandMetres(m) => {
                         info!("Setting band to {}m", m);
