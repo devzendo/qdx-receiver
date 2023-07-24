@@ -368,7 +368,8 @@ impl Gui {
         set_line_style(LineStyle::Solid, 5);
         //let mut theta = right_theta;
         //loop {
-        let fudged_signal_strength = signal_strength * 10.0; // to make it like my Yaesu :)
+        let fudged_signal_strength = (signal_strength * 10.0).min(1.0); // to make it like my Yaesu :)
+        //info!("fudged signal strength {}", fudged_signal_strength);
         let theta = fudged_signal_strength * theta_range + right_theta; // Theta increases from the right
         let long_r = 164.0;
         let short_r = 80.0;
