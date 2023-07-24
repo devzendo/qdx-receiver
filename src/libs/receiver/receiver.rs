@@ -19,6 +19,8 @@ use crate::libs::gui_api::gui_api::{GUIInput, GUIInputMessage, GUIOutput};
 pub struct CallbackData {
     amplitude: f32,
     avg_waveform_amplitude: f32,
+    min_waveform_amplitude: f32,
+    max_waveform_amplitude: f32,
 }
 
 pub struct Receiver {
@@ -30,15 +32,15 @@ pub struct Receiver {
 }
 
 // TODO replace this with obtaining the audio gain from the QDX, and setting it directly.
-const AMPLITUDE_GAIN: f32 = 20.0;
-// Thanks to MBo: https://stackoverflow.com/questions/55016337/calculate-or-update-average-without-iteration-over-time
-const ALPHA: f32 = 0.1;
+const AMPLITUDE_GAIN: f32 = 90.0;
 
 impl Receiver {
     pub fn new(terminate: Arc<AtomicBool>, cat: Arc<Mutex<Cat>>) -> Self {
         let callback_data = CallbackData {
             amplitude: 0.0,
             avg_waveform_amplitude: 0.0,
+            min_waveform_amplitude: 100.0,
+            max_waveform_amplitude: 0.0,
         };
 
         let arc_lock_callback_data = Arc::new(RwLock::new(callback_data));
@@ -61,9 +63,10 @@ impl Receiver {
                     Some(gui_input) => {
                         let callback_data = thread_callback_data.read().unwrap();
                         let strength = callback_data.avg_waveform_amplitude;
+                        info!("min {} max {}", callback_data.min_waveform_amplitude, callback_data.max_waveform_amplitude);
                         drop(callback_data);
 
-                        gui_input.send(GUIInputMessage::SignalStrength(strength)).unwrap();
+                        let _ = gui_input.send(GUIInputMessage::SignalStrength(strength));
                     }
                 }
             }
@@ -92,19 +95,33 @@ impl Receiver {
             drop(callback_data);
 
             let mut avg_waveform_amplitude = 0.0;
+            let mut min_amp = 100.0;
+            let mut max_amp = 0.0;
             for idx in 0..frames * 2 {
                 // TODO MONO - if opening the stream with a single channel causes the same values to
                 // be written to both left and right outputs, this could be optimised..
-
-                out_buffer[idx] = in_buffer[idx] * amplitude; // why a scaling factor? why is input so quiet? don't know!
-                avg_waveform_amplitude += in_buffer[idx];
+                let sample = in_buffer[idx] * amplitude;
+                if sample < min_amp {
+                    min_amp = sample;
+                }
+                if sample > max_amp {
+                    max_amp = sample;
+                }
+                out_buffer[idx] = sample ; // why a scaling factor? why is input so quiet? don't know!
+                avg_waveform_amplitude += (sample + 1.0) / 2.0; // Should be in range [0..1]
             }
 
-            avg_waveform_amplitude /= 128.0;
+            avg_waveform_amplitude /= 128.0; // should be in range [0..1]
             let mut callback_data = move_clone_callback_data.write().unwrap();
-            // Exponentially moving average
-            callback_data.avg_waveform_amplitude = callback_data.avg_waveform_amplitude * (1.0-ALPHA) + avg_waveform_amplitude * ALPHA;
+            callback_data.avg_waveform_amplitude = avg_waveform_amplitude;
+            if min_amp < callback_data.min_waveform_amplitude {
+                callback_data.min_waveform_amplitude = min_amp;
+            }
+            if max_amp > callback_data.max_waveform_amplitude {
+                callback_data.max_waveform_amplitude = max_amp;
+            }
 
+            // With AMPLITUDE set as above, the min/max are around -1 .. +1 on very strong signals.
             pa::Continue
         };
 
