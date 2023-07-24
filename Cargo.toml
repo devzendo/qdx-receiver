@@ -14,6 +14,7 @@ fltk = "1"
 log = "0.4"
 portaudio = "0.7.0"
 regex = "1.9.1"
+rust-embed="6.8.1"
 serialport = "3.3.0"
 
 [[bin]]

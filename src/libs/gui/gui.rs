@@ -8,17 +8,19 @@ use std::sync::mpsc::sync_channel;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use fltk::image::PngImage;
 use fltk::{app::*, app, button::*, draw::*, enums::*, prelude::*, widget::*, window::*};
 use fltk::output::Output;
 use fltk::valuator::SliderType::Horizontal;
 use fltk::valuator::ValueSlider;
 use log::{debug, error, info};
+use rust_embed::RustEmbed;
 use crate::libs::gui_api::gui_api::{GUIInputMessage, GUIOutput, Message};
 
 pub const WIDGET_PADDING: i32 = 10;
 
 const METER_WIDTH: i32 = 300;
-const METER_HEIGHT: i32 = 200;
+const METER_HEIGHT: i32 = 167;
 
 const DIGIT_HEIGHT: i32 = 40;
 const DIGIT_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 2;
@@ -28,6 +30,9 @@ const BAND_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 10;
 
 const MUTE_BUTTON_DIM: i32 = (DIGIT_HEIGHT / 2) + 12;
 
+#[derive(RustEmbed)]
+#[folder = "assets/"]
+struct Asset;
 
 pub struct Gui {
     gui_input_tx: Arc<mpsc::SyncSender<GUIInputMessage>>,
@@ -82,8 +87,8 @@ impl Gui {
         debug!("Initialising Window");
         let mut wind = Window::default().with_label(format!("qdx-receiver v{} de M0CUV", version).as_str());
         let window_background = Color::from_hex_str("#dfe2ff").unwrap();
-        let meter_canvas_background = Color::from_hex_str("#aab0cb").unwrap();
-
+        let meter_png_file = Asset::get("s-meter.png").unwrap().data;
+        let mut meter_png = PngImage::from_data(&meter_png_file).unwrap();
         let thread_terminate = terminate.clone();
         let (gui_input_tx, gui_input_rx) = sync_channel::<GUIInputMessage>(16);
 
@@ -248,8 +253,7 @@ impl Gui {
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
         gui.meter_canvas.draw(move |wid| {
             let signal_strength = *meter_arc_mutex_signal_strength.lock().unwrap();
-
-            Self::draw_meter(wid, meter_canvas_background, signal_strength);
+            Self::draw_meter(wid, signal_strength, &mut meter_png);
         });
 
         gui.frequency_output.set_color(window_background);
@@ -339,38 +343,38 @@ impl Gui {
                   mid_y - (short_r * theta.sin()) as i32);
     }
 
-    fn draw_meter(wid: &mut Widget, background: Color, signal_strength: f32) {
+    fn draw_meter(wid: &mut Widget, signal_strength: f32, meter_png: &mut PngImage) {
         push_clip(wid.x(), wid.y(), wid.width(), wid.height());
-        draw_rect_fill(wid.x(), wid.y(), wid.width(), wid.height(), background);
 
+        meter_png.draw(wid.x(), wid.y(), wid.width(), wid.height());
         set_draw_color(Color::Black);
         draw_rect(wid.x(), wid.y(), wid.width(), wid.height());
-        set_line_style(LineStyle::Solid, 5); // Must be done after setting colour (for Windows)
 
-        // strength of 0 is 𝛉=3𝛑/4 (125º) = 2.3562, strength of 1 is 𝛉=𝛑/4 (45º) = 0.7854
-        // difference is 1.5708.
+
+        // strength of 0 is 𝛉=5𝛑/6 (150º) = 2.6180, strength of 1 is 𝛉=𝛑/6 (30º) = 0.5236
+        // difference is 2.0944. The end points are 'closer in' to the vertical axis than this so
+        // reduce by this fudge..
+        let theta_fudge = 0.28;
+        let left_theta = 2.6180 - theta_fudge;
+        let right_theta = 0.5236 + theta_fudge;
+        let theta_range = left_theta - right_theta;
         // The meter is anchored at..
-        let mid_x = wid.width() / 2;
-        let mid_y = (wid.height() / 4) * 3;
-
-        // Draw arc
-        let arc_radius: f32 = 110.0;
-        let mut arc_theta: f32 = 0.7854;
-        let delta_theta: f32 = 0.04;
-        while arc_theta <= 2.3562 {
-            draw_line(mid_x - (arc_radius * arc_theta.cos()) as i32,
-                      mid_y - (arc_radius * arc_theta.sin()) as i32,
-                      mid_x - (arc_radius * (arc_theta + delta_theta).cos()) as i32,
-                      mid_y - (arc_radius * (arc_theta + delta_theta).sin()) as i32);
-            arc_theta += delta_theta;
-        }
+        let mid_x = (wid.width() / 2) + 10;
+        let mid_y = wid.height() + 50; // the anchor of the needle is outside the clipping area
 
         // Draw needle
-        let theta = signal_strength * 1.5708 + 0.7854;
-        let long_r = 120.0;
-        let short_r = 40.0;
+        set_line_style(LineStyle::Solid, 5);
+        //let mut theta = right_theta;
+        //loop {
+        let theta = signal_strength * theta_range + right_theta; // Theta increases from the right
+        let long_r = 164.0;
+        let short_r = 80.0;
         info!("Updating meter to theta {} signal strength is {}", theta, signal_strength);
         Self::draw_meter_line(theta, long_r, short_r, mid_x, mid_y);
+        //theta += 0.01;
+        //if theta >= left_theta {
+        //    break;
+        //}}
 
         set_line_style(LineStyle::Solid, 0); // reset it, or everything is thick
         pop_clip();

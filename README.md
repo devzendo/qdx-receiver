@@ -54,6 +54,7 @@ To run, do:
 
 # Notes
 * CAT spec at https://www.kenwood.com/i/products/info/amateur/ts_480/pdf/ts_480_pc.pdf
+* Meter scale from https://www.pi4frg.nl/857meter_eng.htm
 
 # License, Copyright & Contact info
 This code is released under the Apache 2.0 License: http://www.apache.org/licenses/LICENSE-2.0.html.
