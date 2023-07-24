@@ -370,7 +370,7 @@ impl Gui {
         let theta = fudged_signal_strength * theta_range + right_theta; // Theta increases from the right
         let long_r = 164.0;
         let short_r = 80.0;
-        info!("Updating meter to theta {} signal strength is {}", theta, fudged_signal_strength);
+        debug!("Updating meter to theta {} signal strength is {}", theta, fudged_signal_strength);
         Self::draw_meter_line(theta, long_r, short_r, mid_x, mid_y);
         //theta += 0.01;
         //if theta >= left_theta {
