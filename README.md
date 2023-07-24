@@ -28,17 +28,21 @@ Plus you could use it to tune around and find other interesting signals!
 
 ## Project Status
 Project started 9 Jul 2023, currently a bit rough, but working.
+
 Known issues:
 * Some audio artifacts, especially soon after startup. Probably my gain setting is wrong.
 * The signal strength meter is "an attempt" - it vaguely matches my real transceiver's meter, sometimes.
+
 Needed before a proper release:
 * No packaging/release system yet. Build it yourself from source.
 * Finds the QDX audio output device, but only finds the speaker device as named on a MacBook or my old Windows laptop. (Eventually you'll be able to choose this.)
 * Developed and tested best on macOS Catalina. Should build on Linux and Windows.
+
 Nice to have:
 * Volume control could adjust the QDX's actual gain.
 * No configuration yet (to store the last tuned frequency on each band; the last used frequency; the amplitude).
 * Make the GUI "beautiful".
+
 Really nice to have:
 * A waterfall display.
 * Bandpass/notch filtering for CW.
