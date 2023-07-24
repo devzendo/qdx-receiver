@@ -247,42 +247,9 @@ impl Gui {
 
         gui.meter_canvas.set_trigger(CallbackTrigger::Release);
         gui.meter_canvas.draw(move |wid| {
-            push_clip(wid.x(), wid.y(), wid.width(), wid.height());
-            draw_rect_fill(wid.x(), wid.y(), wid.width(), wid.height(), meter_canvas_background);
-
-            set_draw_color(Color::Black);
-            draw_rect(wid.x(), wid.y(), wid.width(), wid.height());
-            set_line_style(LineStyle::Solid, 5); // Must be done after setting colour (for Windows)
-
-            // strength of 0 is 𝛉=3𝛑/4 (125º) = 2.3562, strength of 1 is 𝛉=𝛑/4 (45º) = 0.7854
-            // difference is 1.5708.
             let signal_strength = *meter_arc_mutex_signal_strength.lock().unwrap();
-            // The meter is anchored at..
-            let mid_x = wid.width() / 2;
-            let mid_y = (wid.height() / 4) * 3;
-            // Draw arc
-            let arc_radius: f32 = 110.0;
-            let mut arc_theta: f32 = 0.7854;
-            let delta_theta: f32 = 0.04;
-            while arc_theta <= 2.3562 {
-                draw_line(mid_x - (arc_radius * arc_theta.cos()) as i32,
-                          mid_y - (arc_radius * arc_theta.sin()) as i32,
-                          mid_x - (arc_radius * (arc_theta + delta_theta).cos()) as i32,
-                          mid_y - (arc_radius * (arc_theta + delta_theta).sin()) as i32);
-                arc_theta += delta_theta;
-            }
-            // Draw needle
-            let theta = signal_strength * 1.5708 + 0.7854;
-            let long_r = 120.0;
-            let short_r = 40.0;
-            draw_line(mid_x - (long_r * theta.cos()) as i32,
-                      mid_y - (long_r * theta.sin()) as i32,
-                      mid_x - (short_r * theta.cos()) as i32,
-                      mid_y - (short_r * theta.sin()) as i32);
 
-            info!("Updating meter to theta {} signal strength is {}", theta, signal_strength);
-            set_line_style(LineStyle::Solid, 0); // reset it, or everything is thick
-            pop_clip();
+            Self::draw_meter(wid, meter_canvas_background, signal_strength);
         });
 
         gui.frequency_output.set_color(window_background);
@@ -363,6 +330,44 @@ impl Gui {
         wind.show();
         debug!("Starting app wait loop");
         gui
+    }
+
+    fn draw_meter(wid: &mut Widget, background: Color, signal_strength: f32) {
+        push_clip(wid.x(), wid.y(), wid.width(), wid.height());
+        draw_rect_fill(wid.x(), wid.y(), wid.width(), wid.height(), background);
+
+        set_draw_color(Color::Black);
+        draw_rect(wid.x(), wid.y(), wid.width(), wid.height());
+        set_line_style(LineStyle::Solid, 5); // Must be done after setting colour (for Windows)
+
+        // strength of 0 is 𝛉=3𝛑/4 (125º) = 2.3562, strength of 1 is 𝛉=𝛑/4 (45º) = 0.7854
+        // difference is 1.5708.
+        // The meter is anchored at..
+        let mid_x = wid.width() / 2;
+        let mid_y = (wid.height() / 4) * 3;
+        // Draw arc
+        let arc_radius: f32 = 110.0;
+        let mut arc_theta: f32 = 0.7854;
+        let delta_theta: f32 = 0.04;
+        while arc_theta <= 2.3562 {
+            draw_line(mid_x - (arc_radius * arc_theta.cos()) as i32,
+                      mid_y - (arc_radius * arc_theta.sin()) as i32,
+                      mid_x - (arc_radius * (arc_theta + delta_theta).cos()) as i32,
+                      mid_y - (arc_radius * (arc_theta + delta_theta).sin()) as i32);
+            arc_theta += delta_theta;
+        }
+        // Draw needle
+        let theta = signal_strength * 1.5708 + 0.7854;
+        let long_r = 120.0;
+        let short_r = 40.0;
+        draw_line(mid_x - (long_r * theta.cos()) as i32,
+                  mid_y - (long_r * theta.sin()) as i32,
+                  mid_x - (short_r * theta.cos()) as i32,
+                  mid_y - (short_r * theta.sin()) as i32);
+
+        info!("Updating meter to theta {} signal strength is {}", theta, signal_strength);
+        set_line_style(LineStyle::Solid, 0); // reset it, or everything is thick
+        pop_clip();
     }
 
     fn show_frequency(&mut self) {
