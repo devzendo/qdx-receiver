@@ -113,7 +113,8 @@ impl Receiver {
 
             avg_waveform_amplitude /= 128.0; // should be in range [0..1]
             let mut callback_data = move_clone_callback_data.write().unwrap();
-            callback_data.avg_waveform_amplitude = avg_waveform_amplitude;
+            callback_data.avg_waveform_amplitude -= callback_data.avg_waveform_amplitude / 20.0;
+            callback_data.avg_waveform_amplitude += avg_waveform_amplitude / 20.0;
             if min_amp < callback_data.min_waveform_amplitude {
                 callback_data.min_waveform_amplitude = min_amp;
             }
