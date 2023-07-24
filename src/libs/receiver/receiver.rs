@@ -108,7 +108,7 @@ impl Receiver {
                     max_amp = sample;
                 }
                 out_buffer[idx] = sample ; // why a scaling factor? why is input so quiet? don't know!
-                avg_waveform_amplitude += (sample + 1.0) / 2.0; // Should be in range [0..1]
+                avg_waveform_amplitude += sample.abs(); // Should be in range [0..1]
             }
 
             avg_waveform_amplitude /= 128.0; // should be in range [0..1]
